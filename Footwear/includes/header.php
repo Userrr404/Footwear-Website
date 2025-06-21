@@ -2,6 +2,7 @@
 if (!defined('BASE_URL')) {
     require_once '../config.php';
 }
+require_once INCLUDES_PATH . 'db_connection.php'; // add this if not already included
 session_start();
 ?>
 
@@ -25,12 +26,21 @@ session_start();
     <a href="<?= BASE_URL ?>views/index.php">Home</a>
     <a href="<?= BASE_URL ?>views/products.php">Shop</a>
     <a href="<?= BASE_URL ?>views/cart.php">
-      Cart
-      <?php
-        $cart_count = isset($_SESSION['cart']) ? count($_SESSION['cart']) : 0;
-        echo "<span class='cart-count'>$cart_count</span>";
-      ?>
-    </a>
+  Cart
+  <?php
+    $cart_count = 0;
+    if (isset($_SESSION['user_id'])) {
+      $stmt = $connection->prepare("SELECT COUNT(*) FROM cart WHERE user_id = ?");
+      $stmt->bind_param("i", $_SESSION['user_id']);
+      $stmt->execute();
+      $stmt->bind_result($cart_count);
+      $stmt->fetch();
+      $stmt->close();
+    }
+    echo "<span class='cart-count'>$cart_count</span>";
+  ?>
+</a>
+
     <div class="search-box">
       <form action="<?= BASE_URL ?>views/search.php" method="get">
         <input type="text" name="query" placeholder="Search..." />

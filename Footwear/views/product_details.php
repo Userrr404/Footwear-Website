@@ -137,9 +137,12 @@ $reviews = $review_stmt->get_result();
   <p><a href="<?= BASE_URL ?>views/index.php">← Back to Home</a></p>
 </div>
 
+<!-- Footer -->
+<?php require_once INCLUDES_PATH . 'footer.php'; ?>
 
+<!-- Scripts -->
 <script src="<?= BASE_URL ?>assets/js/product_details.js"></script>
 
-<?php require_once INCLUDES_PATH . 'footer.php'; ?>
+
 </body>
 </html>
