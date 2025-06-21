@@ -1,0 +1,70 @@
+body {
+  font-family: "Segoe UI", sans-serif;
+  background-color: #f5f7fa;
+  margin: 0;
+  padding: 0;
+}
+
+.dashboard-container {
+  max-width: 900px;
+  margin: 50px auto;
+  background-color: #fff;
+  border-radius: 12px;
+  padding: 2rem 3rem;
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.dashboard-header h2 {
+  font-size: 1.8rem;
+  color: #333;
+}
+
+.welcome-message {
+  font-size: 1rem;
+  color: #666;
+}
+
+.dashboard-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.dashboard-links a {
+  text-align: center;
+  padding: 1rem;
+  background-color: #111;
+  color: #fff;
+  text-decoration: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: 0.3s ease;
+}
+
+.dashboard-links a:hover {
+  background-color: #f39c12;
+  color: #111;
+}
+
+.logout {
+  text-align: right;
+  margin-top: 2rem;
+}
+
+.logout a {
+  color: red;
+  text-decoration: none;
+  font-weight: bold;
+}
+
+.logout a:hover {
+  text-decoration: underline;
+}
