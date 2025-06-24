@@ -2,7 +2,7 @@
 if (!defined('BASE_URL')) {
     require_once '../config.php';
 }
-require_once INCLUDES_PATH . 'db_connection.php'; // add this if not already included
+require_once INCLUDES_PATH . 'db_connection.php';
 session_start();
 ?>
 

@@ -7,7 +7,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $user_email    = trim($_POST['user_email']);
     $user_password = password_hash($_POST['user_password'], PASSWORD_DEFAULT);
 
-    $stmt = $conn->prepare("INSERT INTO users (`username`, `user_email`, `user_password`) VALUES (?, ?, ?)");
+    $stmt = $connection->prepare("INSERT INTO users (`username`, `user_email`, `user_password`) VALUES (?, ?, ?)");
     $stmt->bind_param("sss", $username, $user_email, $user_password);
 
     if ($stmt->execute()) {

@@ -18,9 +18,6 @@ $username = $_SESSION['username'];
   <link rel="stylesheet" href="../assets/css/dashboard.css" />
 </head>
 <body>
-
-  
-
   <div class="dashboard-container">
     <div class="dashboard-header">
       <h2>Welcome, <?= htmlspecialchars($username) ?> 👋</h2>

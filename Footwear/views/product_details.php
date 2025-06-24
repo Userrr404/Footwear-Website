@@ -142,7 +142,5 @@ $reviews = $review_stmt->get_result();
 
 <!-- Scripts -->
 <script src="<?= BASE_URL ?>assets/js/product_details.js"></script>
-
-
 </body>
 </html>
