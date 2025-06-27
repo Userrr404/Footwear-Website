@@ -10,32 +10,50 @@ if (!isset($_SESSION['user_id'])) {
 
 $user_id = $_SESSION['user_id'];
 
-// Validate form inputs
-$required_fields = ['full_name', 'address_line', 'city', 'state', 'pincode', 'phone'];
-foreach ($required_fields as $field) {
-    if (empty($_POST[$field])) {
-        die("Missing required field: $field");
+// Check if existing address is selected
+if (isset($_POST['address_id']) && !empty($_POST['address_id'])) {
+    // ✅ Use existing address
+    $address_id = intval($_POST['address_id']);
+    $addr_query = $connection->prepare("SELECT * FROM addresses WHERE address_id = ? AND user_id = ?");
+    $addr_query->bind_param("ii", $address_id, $user_id);
+    $addr_query->execute();
+    $address = $addr_query->get_result()->fetch_assoc();
+
+    if (!$address) {
+        die("Invalid address selected.");
     }
-}
 
-// Insert/update shipping address
-$check = $connection->prepare("SELECT address_id FROM addresses WHERE user_id = ? AND type = 'shipping'");
-$check->bind_param("i", $user_id);
-$check->execute();
-$exists = $check->get_result()->num_rows > 0;
-
-if ($exists) {
-    $sql = "UPDATE addresses SET full_name=?, address_line=?, city=?, state=?, pincode=?, phone=? 
-            WHERE user_id=? AND type='shipping'";
+    $full_name = $address['full_name'];
+    $address_line = $address['address_line'];
+    $city = $address['city'];
+    $state = $address['state'];
+    $pincode = $address['pincode'];
+    $phone = $address['phone'];
 } else {
-    $sql = "INSERT INTO addresses (full_name, address_line, city, state, pincode, phone, user_id, type) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'shipping')";
-}
-$stmt = $connection->prepare($sql);
-$stmt->bind_param("ssssssi", $_POST['full_name'], $_POST['address_line'], $_POST['city'], $_POST['state'], $_POST['pincode'], $_POST['phone'], $user_id);
-$stmt->execute();
+    // ✅ Use new address
+    $required_fields = ['full_name', 'address_line', 'city', 'state', 'pincode', 'phone'];
+    foreach ($required_fields as $field) {
+        if (empty($_POST[$field])) {
+            die("Missing required field: $field");
+        }
+    }
 
-// Fetch cart
+    $full_name = $_POST['full_name'];
+    $address_line = $_POST['address_line'];
+    $city = $_POST['city'];
+    $state = $_POST['state'];
+    $pincode = $_POST['pincode'];
+    $phone = $_POST['phone'];
+    $type = $_POST['type'] ?? 'shipping';
+
+    // Insert the new address
+    $insert_addr = $connection->prepare("INSERT INTO addresses (user_id, full_name, address_line, city, state, pincode, phone, type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    $insert_addr->bind_param("isssssis", $user_id, $full_name, $address_line, $city, $state, $pincode, $phone, $type);
+    $insert_addr->execute();
+    $address_id = $insert_addr->insert_id;
+}
+
+// Get cart items
 $cart_sql = "SELECT * FROM cart WHERE user_id = ?";
 $cart_stmt = $connection->prepare($cart_sql);
 $cart_stmt->bind_param("i", $user_id);
@@ -56,12 +74,12 @@ while ($item = $cart_items->fetch_assoc()) {
 }
 
 // Insert into orders table
-$order_stmt = $connection->prepare("INSERT INTO orders (user_id, total_amount) VALUES (?, ?)");
-$order_stmt->bind_param("id", $user_id, $total);
+$order_stmt = $connection->prepare("INSERT INTO orders (user_id, address_id, total_amount) VALUES (?, ?, ?)");
+$order_stmt->bind_param("iid", $user_id, $address_id, $total);
 $order_stmt->execute();
 $order_id = $order_stmt->insert_id;
 
-// Insert into order_items
+// Insert order items
 foreach ($items as $item) {
     $price = $connection->query("SELECT price FROM products WHERE product_id = {$item['product_id']}")->fetch_assoc()['price'];
     $stmt = $connection->prepare("INSERT INTO order_items (order_id, product_id, size_id, quantity, price) VALUES (?, ?, ?, ?, ?)");
@@ -72,17 +90,15 @@ foreach ($items as $item) {
 // Clear cart
 $connection->query("DELETE FROM cart WHERE user_id = $user_id");
 
-// Optional: send email (see below)
-// Send confirmation email
+// Send email
 $user_email = $connection->query("SELECT user_email FROM users WHERE user_id = $user_id")->fetch_assoc()['user_email'];
 $subject = "Your Elite Footwear Order #$order_id";
-$body = "Hi {$_POST['full_name']},\n\nThank you for your order. Your order ID is $order_id.\n\nTotal: ₹" . number_format($total, 2) . "\n\nRegards,\nElite Footwear Team";
-$headers = "From: yogeshlilakedev02@gmail.com.com";
+$body = "Hi $full_name,\n\nThank you for your order. Your order ID is $order_id.\n\nTotal: ₹" . number_format($total, 2) . "\n\nRegards,\nElite Footwear Team";
+$headers = "From: elitefootwear@example.com";
 
 mail($user_email, $subject, $body, $headers);
 
-
 // Redirect to success
-header("Location: ../views/order_success.php?order_id=" . $order_id);
+header("Location: ../views/order_success.php?order_id=$order_id");
 exit;
 ?>
