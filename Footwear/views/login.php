@@ -2,6 +2,7 @@
 session_start();
 require_once '../config.php'; // Define DB config paths
 require_once INCLUDES_PATH . 'db_connection.php'; // Include DB connection
+require_once '../includes/user_activity.php';
 
 $error = "";
 
@@ -9,7 +10,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $user_email = trim($_POST['user_email']);
     $user_password = $_POST['user_password'];
 
-    // Prepare statement to avoid SQL injection
     $stmt = $connection->prepare("SELECT * FROM users WHERE user_email = ?");
     $stmt->bind_param("s", $user_email);
     $stmt->execute();
@@ -18,19 +18,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($res->num_rows === 1) {
         $user = $res->fetch_assoc();
 
-        // Verify hashed password
         if (password_verify($user_password, $user['user_password'])) {
             $_SESSION['user_id'] = $user['user_id'];
             $_SESSION['username'] = $user['username'];
             $_SESSION['user_email'] = $user['user_email'];
 
+            logUserActivity($user['user_id'], 'login', 'Login successful');
+
             header("Location: dashboard.php");
             exit;
+        } else {
+            logUserActivity($user['user_id'], 'login', 'Wrong password', 0);
         }
+    } else {
+        logUserActivity(null, 'login', "Failed login for unknown email: $user_email", 0);
     }
 
     $error = "Invalid email or password.";
 }
+
 ?>
 
 <!DOCTYPE html>
