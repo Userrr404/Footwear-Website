@@ -37,7 +37,7 @@ $user = $stmt->get_result()->fetch_assoc();
 
   <div class="profile-links">
     <a href="orders.php">📦 My Orders</a>
-    <a href="saved_items.php">❤️ Wishlist</a>
+    <a href="wishlist.php">❤️ Wishlist</a>
     <a href="manage_addresses.php">📍 My Addresses</a>
     <a href="logout.php" class="logout-btn">🚪 Logout</a>
   </div>

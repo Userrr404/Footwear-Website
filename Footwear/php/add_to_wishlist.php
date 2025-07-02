@@ -24,6 +24,13 @@ if ($product_id) {
     $stmt->bind_param("ii", $user_id, $product_id);
     $stmt->execute();
 
+//     ALTER TABLE wishlist
+// ADD CONSTRAINT unique_user_product UNIQUE (user_id, product_id);
+// using this query in MySQL database same product with same user cannot be added to wishlist
+//    This ensures that a user cannot add the same product to their wishlist multiple times.
+    // Check if the insert was successful
+    // If the product already exists, it will not insert a new row due to IGNORE
+
     if ($stmt->affected_rows > 0) {
         logUserActivity($user_id, 'add_to_wishlist', 'Added product ID to wishlist: ' . $product_id);
         $response = ['status' => 'success', 'message' => 'Product added to wishlist.'];

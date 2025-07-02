@@ -17,6 +17,7 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
 }
 
 $product_id = intval($_GET['id']);
+$user_id = $_SESSION['user_id'];
 
 // Wishlist check
 $wishlisted = false;
@@ -81,6 +82,15 @@ $reviews = $review_stmt->get_result();
   margin: 10px 0;
   border: 1px solid #f5c6cb;
   border-radius: 5px;
+}
+
+.wishlist-icon {
+  font-size: 2rem;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+.wishlist-icon:hover {
+  transform: scale(1.2);
 }
 </style>
 
