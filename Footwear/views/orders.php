@@ -64,7 +64,7 @@ $orders = $stmt->get_result();
         <a href="order_details.php?order_id=<?= $order['order_id'] ?>">📄 View Details</a>
         <a href="track_order.php?order_id=<?= $order['order_id'] ?>">📍 Track</a>
         <?php if ($order['order_status'] === 'pending'): ?>
-          <a class="cancel" href="cancel_order.php?order_id=<?= $order['order_id'] ?>" onclick="return confirm('Are you sure you want to cancel this order?')">❌ Cancel</a>
+          <a class="cancel" href="../php/cancel_order.php?order_id=<?= $order['order_id'] ?>" onclick="return confirm('Are you sure you want to cancel this order?')">❌ Cancel</a>
         <?php endif; ?>
       </div>
     </div>

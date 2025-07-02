@@ -1,6 +1,7 @@
 <?php
 require_once '../config.php';
 require_once INCLUDES_PATH . 'db_connection.php';
+require_once '../includes/user_activity.php';
 session_start();
 
 if (!isset($_SESSION['user_id'], $_GET['order_id'])) {
@@ -24,6 +25,8 @@ $u = $connection->prepare("UPDATE orders SET order_status='cancelled' WHERE orde
 $u->bind_param("i", $order_id);
 $u->execute();
 
-header("Location: orders.php?status=cancelled");
+logUserActivity($user_id, 'cancel_order', 'Cancelled order ID: ' . $order_id);
+
+header("Location: ../views/orders.php?status=cancelled");
 exit;
 ?>

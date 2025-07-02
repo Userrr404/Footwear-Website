@@ -3,12 +3,30 @@ require_once '../config.php';
 require_once INCLUDES_PATH . 'db_connection.php';
 require_once INCLUDES_PATH . 'header.php';
 
+// Show flash message (success or error)
+$wishlist_success = $_SESSION['success'] ?? '';
+$wishlist_error   = $_SESSION['error'] ?? '';
+
+// Clear the session messages (flash once)
+unset($_SESSION['success'], $_SESSION['error']);
+
+
 if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
     echo "<p>Invalid product ID.</p>";
     exit;
 }
 
 $product_id = intval($_GET['id']);
+
+// Wishlist check
+$wishlisted = false;
+if (isset($_SESSION['user_id'])) {
+    $wishlist_check = $connection->prepare("SELECT 1 FROM wishlist WHERE user_id = ? AND product_id = ?");
+    $wishlist_check->bind_param("ii", $user_id, $product_id);
+    $wishlist_check->execute();
+    $wishlist_check->store_result();
+    $wishlisted = $wishlist_check->num_rows > 0;
+}
 
 // Product Info
 $sql = "SELECT p.*, c.category_name, b.brand_name 
@@ -47,6 +65,25 @@ $reviews = $review_stmt->get_result();
   <title><?= htmlspecialchars($product['product_name']) ?> | Elite Footwear</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="<?= BASE_URL ?>assets/css/product_details.css" />
+    <style>
+.success {
+  background-color: #d4edda;
+  color: #155724;
+  padding: 10px;
+  margin: 10px 0;
+  border: 1px solid #c3e6cb;
+  border-radius: 5px;
+}
+.error {
+  background-color: #f8d7da;
+  color: #721c24;
+  padding: 10px;
+  margin: 10px 0;
+  border: 1px solid #f5c6cb;
+  border-radius: 5px;
+}
+</style>
+
 </head>
 <body>
 
@@ -89,10 +126,25 @@ $reviews = $review_stmt->get_result();
       <button type="submit">🛒 Add to Cart</button>
     </form>
 
-    <form method="post" action="<?= BASE_URL ?>php/add_to_wishlist.php" style="margin-top: 10px;">
-      <input type="hidden" name="product_id" value="<?= $product['product_id'] ?>">
-      <button type="submit">💖 Add to Wishlist</button>
-    </form>
+    <?php if ($wishlist_success): ?>
+  <p class="success"><?= htmlspecialchars($wishlist_success) ?></p>
+<?php endif; ?>
+
+<?php if ($wishlist_error): ?>
+  <p class="error"><?= htmlspecialchars($wishlist_error) ?></p>
+<?php endif; ?>
+    <!-- Add to Wishlist -->
+    <form method="post" action="<?= BASE_URL ?>php/<?= $wishlisted ? 'remove_from_wishlist.php' : 'add_to_wishlist.php' ?>" style="margin-top: 10px;">
+    <input type="hidden" name="product_id" value="<?= $product['product_id'] ?>">
+    <div class="wishlist-toggle" data-product-id="<?= $product['product_id'] ?>">
+    <span class="wishlist-icon" style="font-size: 1.8rem; cursor: pointer;">
+        <?= $wishlisted ? '❤️' : '🤍' ?>
+    </span>
+</div>
+<p id="wishlist-status" style="font-size: 0.9rem; color: green;"></p>
+
+</form>
+
 
     <p><strong>Stock:</strong> <?= $product['stock'] ?> available</p>
   </div>
@@ -142,5 +194,34 @@ $reviews = $review_stmt->get_result();
 
 <!-- Scripts -->
 <script src="<?= BASE_URL ?>assets/js/product_details.js"></script>
+<script>
+document.querySelector('.wishlist-toggle')?.addEventListener('click', function () {
+    const icon = this.querySelector('.wishlist-icon');
+    const productId = this.dataset.productId;
+    const isWishlisted = icon.textContent.trim() === '❤️';
+    const action = isWishlisted ? 'remove_from_wishlist' : 'add_to_wishlist';
+
+    fetch(`../php/${action}.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `product_id=${productId}`
+    })
+    .then(response => response.text())
+    .then(data => {
+        if (isWishlisted) {
+            icon.textContent = '🤍';
+            document.getElementById('wishlist-status').textContent = 'Removed from wishlist.';
+        } else {
+            icon.textContent = '❤️';
+            document.getElementById('wishlist-status').textContent = 'Added to wishlist.';
+        }
+    })
+    .catch(error => {
+        console.error('Wishlist error:', error);
+        document.getElementById('wishlist-status').textContent = 'An error occurred.';
+    });
+});
+</script>
+
 </body>
 </html>

@@ -1,6 +1,7 @@
 <?php
 require_once '../config.php';
 require_once INCLUDES_PATH . 'db_connection.php';
+require_once '../includes/user_activity.php';
 session_start();
 
 if (!isset($_SESSION['user_id'])) {
@@ -97,6 +98,8 @@ $body = "Hi $full_name,\n\nThank you for your order. Your order ID is $order_id.
 $headers = "From: elitefootwear@example.com";
 
 mail($user_email, $subject, $body, $headers);
+
+logUserActivity($user_id, 'place_order', 'Placed order ID: ' . $order_id);
 
 // Redirect to success
 header("Location: ../views/order_success.php?order_id=$order_id");
