@@ -18,22 +18,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($res->num_rows === 1) {
         $user = $res->fetch_assoc();
 
-        if (password_verify($user_password, $user['user_password'])) {
+        if($user['status'] !== 'active'){
+            $error = "Your account is not active. Please contact support.";
+            logUserActivity($user['user_id'], 'login', 'Inactive account attempted login', 0);
+            header("Location: login.php?error=" . urlencode($error));
+            exit;
+        }elseif (password_verify($user_password, $user['user_password'])) {
             $_SESSION['user_id'] = $user['user_id'];
             $_SESSION['username'] = $user['username'];
             $_SESSION['user_email'] = $user['user_email'];
+            $_SESSION['full_name']   = $user['full_name'];
+            $_SESSION['role']        = $user['role'];
 
             logUserActivity($user['user_id'], 'login', 'Login successful');
+
+            // Update last login time and IP
+            $last_login_at = date('Y-m-d H:i:s');
+            $last_login_ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+
+            $update = $connection->prepare("UPDATE users SET last_login_at = ?, last_login_ip = ? WHERE user_id = ?");
+            $update->bind_param("ssi", $last_login_at, $last_login_ip, $user['user_id']);
+            $update->execute();
+            $update->close();
 
             header("Location: dashboard.php");
             exit;
         } else {
             logUserActivity($user['user_id'], 'login', 'Wrong password', 0);
+            $error = "Invalid email or password.";
         }
     } else {
         logUserActivity(null, 'login', "Failed login for unknown email: $user_email", 0);
+        $error = "Invalid email or password.";
     }
-
     $error = "Invalid email or password.";
 }
 
