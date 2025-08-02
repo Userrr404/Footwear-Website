@@ -1,5 +1,6 @@
 <?php
 session_start();
+date_default_timezone_set('Asia/Kolkata'); // Set this time zone as per our requirement because php date function uses this time zone (UTC instead of Asia/Kolkate).
 require_once '../config.php'; // Define DB config paths
 require_once INCLUDES_PATH . 'db_connection.php'; // Include DB connection
 require_once '../includes/user_activity.php';
@@ -33,11 +34,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             logUserActivity($user['user_id'], 'login', 'Login successful');
 
             // Update last login time and IP
-            $last_login_at = date('Y-m-d H:i:s');
             $last_login_ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 
-            $update = $connection->prepare("UPDATE users SET last_login_at = ?, last_login_ip = ? WHERE user_id = ?");
-            $update->bind_param("ssi", $last_login_at, $last_login_ip, $user['user_id']);
+            /*  
+            USE PHP date function to get the current timestamp that will be used to update the last login time.
+            But insert the current timestamp using php date time function.
+                $last_login_at = date('Y-m-d H:i:s');
+                $update = $connection->prepare("UPDATE users SET last_login_at = ?, last_login_ip = ? WHERE user_id = ?");
+                $update->bind_param("ssi", $last_login_at, $last_login_ip, $user['user_id']);
+            */
+
+             // ✅ Update last login timestamp and IP using MySQL NOW()
+            $update = $connection->prepare("
+                UPDATE users 
+                SET last_login_at = NOW(), last_login_ip = ? 
+                WHERE user_id = ?
+            ");
+            $update->bind_param("si", $last_login_ip, $user['user_id']);
             $update->execute();
             $update->close();
 
