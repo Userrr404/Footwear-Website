@@ -29,7 +29,7 @@ if (!$result) {
 
   <!-- Hero Section -->
   <div class="hero">
-    <img id="heroImage" src="../assets/images/hero_image1.jpeg" alt="Hero Banner">
+    <img id="heroImage" src="../assets/images/hero-desktop22.jpg" alt="Hero Banner">
     <div class="hero-content">
       <h1>Step Into Style</h1>
       <p>Explore the latest collection of premium footwear</p>
@@ -61,6 +61,6 @@ if (!$result) {
   <?php require_once INCLUDES_PATH . 'footer.php'; ?>
 
   <!-- Hero Slider Script -->
-  <script src="<?= BASE_URL ?>assets/js/index.js"></script>
+  <!-- <script src="<?= BASE_URL ?>assets/js/index.js"></script> -->
 </body>
 </html>

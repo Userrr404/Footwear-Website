@@ -4,7 +4,7 @@ define('SITE_NAME', 'Footwear Store');
 define('CURRENCY', '₹');
 
 // ========== URL Paths ==========
-define('BASE_URL', 'http://localhost/footwear_web/Footwear-Website/Footwear/');
+define('BASE_URL', 'http://localhost/Footwear-Website/Footwear/');
 define('UPLOADS_URL', BASE_URL . 'uploads/');
 define('UPLOADS_PROFILE_URL', BASE_URL . 'uploads_profile/');
 
