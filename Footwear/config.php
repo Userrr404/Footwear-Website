@@ -5,7 +5,7 @@ define('CURRENCY', '₹');
 
 // ========== URL Paths ==========
 define('BASE_URL', 'http://localhost/Footwear-Website/Footwear/');
-define('UPLOADS_URL', BASE_URL . 'uploads/');
+define('UPLOADS_URL', BASE_URL . 'uploads/products/');
 define('UPLOADS_PROFILE_URL', BASE_URL . 'uploads_profile/');
 
 // ========== File Paths ==========

@@ -76,8 +76,7 @@ session_start();
   <?php if (isset($_SESSION['user_id'])): ?>
     <div class="relative hidden sm:block">
       <button class="flex items-center space-x-1 focus:outline-none">
-        <i class="fa-solid fa-user text-gray-700 hover:text-red-600"></i>
-        <span class="hidden sm:inline font-medium"><?= htmlspecialchars($_SESSION['username']) ?></span>
+        <a href="<?= BASE_URL ?>views/dashboard.php"><span class="hidden sm:inline font-medium hover:text-red-600"><?= htmlspecialchars($_SESSION['username']) ?></span></a>
       </button>
       <div class="absolute right-0 mt-2 w-44 bg-white border border-gray-200 rounded-lg shadow-lg hidden group-hover:block">
         <a href="<?= BASE_URL ?>views/dashboard.php" class="block px-4 py-2 hover:bg-gray-100">Dashboard</a>
@@ -122,7 +121,7 @@ session_start();
         <?php endif; ?>
       </a>
       <?php if (isset($_SESSION['user_id'])): ?>
-        <a href="<?= BASE_URL ?>views/dashboard.php"><i class="fa-solid fa-user text-lg hover:text-red-600 transition"></i></a>
+        <a href="<?= BASE_URL ?>views/dashboard.php"><span class="sm:inline font-medium hover:text-red-600"><?= htmlspecialchars($_SESSION['username']) ?></span></a>
       <?php else: ?>
         <a href="<?= BASE_URL ?>views/login.php"><i class="fa-solid fa-user text-lg hover:text-red-600 transition"></i></a>
       <?php endif; ?>
