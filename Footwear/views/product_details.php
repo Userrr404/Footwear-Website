@@ -17,16 +17,6 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
 
 $product_id = intval($_GET['id']);
 
-// Wishlist check
-$wishlisted = false;
-if (isset($_SESSION['user_id'])) {
-    $wishlist_check = $connection->prepare("SELECT 1 FROM wishlist WHERE user_id = ? AND product_id = ?");
-    $wishlist_check->bind_param("ii", $user_id, $product_id);
-    $wishlist_check->execute();
-    $wishlist_check->store_result();
-    $wishlisted = $wishlist_check->num_rows > 0;
-}
-
 // Product Info
 $sql = "SELECT p.*, c.category_name, b.brand_name 
         FROM products p
@@ -97,6 +87,16 @@ $initial_reviews = $rev_stmt->get_result();
     $user_id = null;
     if(isset($_SESSION['user_id'])){
     $user_id = (int) $_SESSION['user_id'];
+}
+
+// Wishlist check
+$wishlisted = false;
+if (isset($_SESSION['user_id'])) {
+    $wishlist_check = $connection->prepare("SELECT 1 FROM wishlist WHERE user_id = ? AND product_id = ?");
+    $wishlist_check->bind_param("ii", $user_id, $product_id);
+    $wishlist_check->execute();
+    $wishlist_check->store_result();
+    $wishlisted = $wishlist_check->num_rows > 0;
 }
 ?>
 
