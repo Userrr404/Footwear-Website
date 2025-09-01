@@ -81,7 +81,7 @@ $initial_reviews = $rev_stmt->get_result();
     <link rel="stylesheet" href="<?= BASE_URL ?>assets/css/product_details.css" />
 
 </head>
-<body class="bg-white">
+<body class="bg-white min-h-screen flex flex-col">
 
 <?php require_once INCLUDES_PATH . 'header.php'; 
     $user_id = null;
@@ -100,6 +100,8 @@ if (isset($_SESSION['user_id'])) {
 }
 ?>
 
+<main class="flex-grow">
+  
 <div class="container">
   <!-- Left: Image Gallery -->
   <div class="gallery">
@@ -307,6 +309,7 @@ if (isset($_SESSION['user_id'])) {
     <button class="scroll-btn right" onclick="scrollSimilar(1)">&#10095;</button>
   </div>
 </div>
+</main>
 
 
 <!-- Footer -->

@@ -10,7 +10,7 @@ session_start();
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
 
 <!-- Header -->
-<header class="min-h-4 bg-gray-200 border-b border-gray-200 shadow-sm sticky top-0 z-50">
+<header class="h-[66px] min-h-4 bg-gray-200 border-b border-gray-200 shadow-sm sticky top-0 z-50">
   <div class="mx-auto flex items-center justify-between px-4 sm:px-6 lg:px-12 py-3 whitespace-nowrap overflow-hidden">
 
     <!-- Logo -->
