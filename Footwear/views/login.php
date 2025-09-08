@@ -19,17 +19,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($res->num_rows === 1) {
         $user = $res->fetch_assoc();
 
-        if($user['status'] !== 'active'){
-            $error = "Your account is not active. Please contact support.";
+        if ($user['status'] !== 'active') {
+            $error = "⚠ Your account is not active. Please contact support.";
             logUserActivity($user['user_id'], 'login', 'Inactive account attempted login', 0);
-            header("Location: login.php?error=" . urlencode($error));
-            exit;
         }elseif (password_verify($user_password, $user['user_password'])) {
-            $_SESSION['user_id'] = $user['user_id'];
-            $_SESSION['username'] = $user['username'];
-            $_SESSION['user_email'] = $user['user_email'];
-            $_SESSION['full_name']   = $user['full_name'];
-            $_SESSION['role']        = $user['role'];
+            $_SESSION['user_id']   = $user['user_id'];
+            $_SESSION['username']  = $user['username'];
+            $_SESSION['user_email']= $user['user_email'];
+            $_SESSION['full_name'] = $user['full_name'];
+            $_SESSION['role']      = $user['role'];
 
             logUserActivity($user['user_id'], 'login', 'Login successful');
 
@@ -70,25 +68,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 ?>
 
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Login - Elite Footwear</title>
-    <link rel="stylesheet" href="../assets/css/login_signup.css" />
+  <meta charset="UTF-8">
+  <title>Login - Elite Footwear</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Bootstrap + Tailwind -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-<div class="form-container">
-    <h2>Login to Elite Footwear</h2>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
 
-    <?php if (!empty($error)) echo "<p class='error'>$error</p>"; ?>
-    <?php if (isset($_GET['success'])) echo "<p class='success'>Account created! Please log in.</p>"; ?>
+<div class="bg-white shadow-lg rounded-2xl p-6 w-full max-w-md">
+  <h2 class="text-2xl font-bold text-center mb-4">Welcome Back 👋</h2>
 
-    <form method="post" autocomplete="off">
-        <input type="email" name="user_email" placeholder="Email" required /><br>
-        <input type="password" name="user_password" placeholder="Password" required /><br>
-        <button type="submit">Login</button>
-    </form>
+  <!-- Flash Messages -->
+  <?php if (!empty($error)): ?>
+    <div class="alert alert-danger"><?= $error; ?></div>
+  <?php endif; ?>
+  <?php if (isset($_GET['success'])): ?>
+    <div class="alert alert-success">✅ Account created! Please log in.</div>
+  <?php endif; ?>
 
-    <p>Don't have an account? <a href="signup.php">Sign up here</a></p>
+  <!-- Login Form -->
+  <form method="POST" class="space-y-3" autocomplete="off">
+    <input type="email" name="user_email" placeholder="Email" class="form-control" required>
+    
+    <div class="input-group">
+      <input type="password" name="user_password" id="password" placeholder="Password" class="form-control" required>
+      <button type="button" class="btn btn-outline-secondary" onclick="togglePassword()">👁</button>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center my-2">
+      <div>
+        <input type="checkbox" id="remember" class="form-check-input">
+        <label for="remember" class="form-check-label text-sm">Remember me</label>
+      </div>
+      <a href="forgot_password.php" class="text-sm text-blue-600">Forgot Password?</a>
+    </div>
+
+    <button type="submit" class="btn btn-dark w-100">Login</button>
+  </form>
+
+  <p class="mt-4 text-center text-sm">
+    Don’t have an account? <a href="signup.php" class="text-blue-600 font-semibold">Sign up</a>
+  </p>
 </div>
+
+<script>
+function togglePassword() {
+  const pwd = document.getElementById("password");
+  pwd.type = pwd.type === "password" ? "text" : "password";
+}
+</script>
+
 </body>
 </html>
+

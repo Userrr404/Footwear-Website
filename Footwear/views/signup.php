@@ -22,9 +22,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Collect and sanitize input
     $username       = trim($_POST['username']);
     $full_name      = trim($_POST['full_name']);
-    $user_email          = trim($_POST['user_email']);
-    $user_phone          = trim($_POST['user_phone']);
-    $user_password       = $_POST['user_password'];
+    $user_email     = trim($_POST['user_email']);
+    $user_phone     = trim($_POST['user_phone']);
+    $user_password  = $_POST['user_password'];
     $city           = trim($_POST['city']);
     $state          = trim($_POST['state']);
     $country        = trim($_POST['country']);
@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Basic validation
     if (empty($username) || empty($user_email) || empty($user_password) || empty($full_name)) {
-        $_SESSION['error'] = "Please fill all required fields.";
+        $_SESSION['error'] = "⚠ Please fill all required fields.";
         header("Location: signup.php");
         exit;
     }
@@ -42,13 +42,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Hash password
     $hashed_password = password_hash($user_password, PASSWORD_BCRYPT);
 
+    // Check if username already exists
+    $stmt = $connection->prepare("SELECT user_id FROM users WHERE username = ?");
+    $stmt->bind_param('s', $username);
+    $stmt->execute();
+    $stmt->store_result();
+    if ($stmt->num_rows > 0) {
+        $_SESSION['error'] = "⚠ Username is already taken.";
+        header("Location: signup.php");
+        exit;
+    }
+
     // Check if email already exists
     $stmt = $connection->prepare("SELECT user_id FROM users WHERE user_email = ?");
     $stmt->bind_param('s', $user_email);
     $stmt->execute();
     $stmt->store_result();
     if ($stmt->num_rows > 0) {
-        $_SESSION['error'] = "Email already registered.";
+        $_SESSION['error'] = "⚠ Email already registered.";
         header("Location: signup.php");
         exit;
     }
@@ -72,38 +83,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     );
 
     if ($stmt->execute()) {
-        $_SESSION['success'] = "Registration successful!";
+        // Send Welcome Email
+        $subject = "Welcome to Elite Footwear!";
+        $message = "Hi $full_name,\n\nThank you for signing up at Elite Footwear. We’re excited to have you on board!\n\n- Team Elite";
+        $headers = "From: no-reply@elitefootwear.com";
+
+        mail($user_email, $subject, $message, $headers);
+
+        $_SESSION['success'] = "✅ Registration successful! Please check your email.";
         header("Location: login.php");
     } else {
-        $_SESSION['error'] = "Registration failed. Please try again.";
+        $_SESSION['error'] = "⚠ Registration failed. Please try again.";
         header("Location: signup.php");
     }
 }
 ?>
 
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Signup - Elite Footwear</title>
-    <link rel="stylesheet" href="../assets/css/login_signup.css" />
+  <meta charset="UTF-8">
+  <title>Signup - Elite Footwear</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Bootstrap + Tailwind -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-<div class="form-container">
-    <h2>Create Account</h2>
-    <?php if (isset($error)) echo "<p class='error'>$error</p>"; ?>
-    <form method="post">
-        <input type="text" name="username" placeholder="Username" required /><br>
-        <input type="text" name="full_name" placeholder="Full Name" required /><br>
-        <input type="email" name="user_email" placeholder="Email" required /><br>
-        <input type="password" name="user_password" placeholder="Password" required /><br>
-        <input type="text" name="user_phone" placeholder="Phone Number" />
-        <input name="city" placeholder="City" />
-        <input name="state" placeholder="State" />
-        <input name="country" placeholder="Country" />
-        <input name="referral_code" placeholder="Referral Code (optional)" />
-        <button type="submit">Sign Up</button>
-    </form>
-    <p>Already registered? <a href="login.php">Login here</a></p>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+
+<div class="bg-white shadow-lg rounded-2xl p-6 w-full max-w-md">
+  <h2 class="text-2xl font-bold text-center mb-4">Create Your Account</h2>
+
+  <!-- Flash Messages -->
+  <?php if (isset($_SESSION['error'])): ?>
+      <div class="alert alert-danger"><?= $_SESSION['error']; unset($_SESSION['error']); ?></div>
+  <?php endif; ?>
+  <?php if (isset($_SESSION['success'])): ?>
+      <div class="alert alert-success"><?= $_SESSION['success']; unset($_SESSION['success']); ?></div>
+  <?php endif; ?>
+
+  <form method="POST" class="space-y-3">
+    <input type="text" name="username" placeholder="Username" class="form-control" required>
+    <input type="text" name="full_name" placeholder="Full Name" class="form-control" required>
+    <input type="email" name="user_email" placeholder="Email" class="form-control" required>
+    <input type="password" name="user_password" placeholder="Password" class="form-control" required>
+    <input type="text" name="referral_code" placeholder="Referral Code (Optional)" class="form-control">
+
+    <button type="submit" class="btn btn-dark w-100">Sign Up</button>
+  </form>
+
+  <p class="mt-4 text-center text-sm">
+    Already have an account? <a href="login.php" class="text-blue-600 font-semibold">Login here</a>
+  </p>
 </div>
+
 </body>
 </html>
+
