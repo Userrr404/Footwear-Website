@@ -27,7 +27,7 @@ require_once INCLUDES_PATH . 'db_connection.php';
   <?php else: ?>
     <?php
     $user_id = $_SESSION['user_id'];
-    $sql = "SELECT c.cart_id, c.quantity, p.product_name, p.selling_price, pi.image_url, s.size_value
+    $sql = "SELECT c.cart_id, c.quantity, c.product_id, p.product_name, p.selling_price, pi.image_url, s.size_value
             FROM cart c
             JOIN products p ON c.product_id = p.product_id
             JOIN sizes s ON c.size_id = s.size_id
@@ -93,6 +93,7 @@ require_once INCLUDES_PATH . 'db_connection.php';
                   <form method="post" action="<?= BASE_URL ?>views/checkout.php">
                     <input type="hidden" name="single_checkout" value="1">
                     <input type="hidden" name="cart_id" value="<?= $item['cart_id'] ?>">
+                    <input type="hidden" name="product_id" value="<?= $item['product_id'] ?>">
                     <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">Checkout This Item</button>
                   </form>
                 </div>
