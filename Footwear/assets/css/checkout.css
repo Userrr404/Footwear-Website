@@ -65,7 +65,7 @@ h1 {
   border: 1px solid #ccc;
 }
 
-button {
+#placeOrderBtn {
   background: #000;
   color: #fff;
   padding: 12px 25px;
@@ -75,7 +75,7 @@ button {
   cursor: pointer;
   transition: background 0.3s;
 }
-button:hover {
+#placeOrderBtn:hover {
   background: #f39c12;
   color: #000;
 }
