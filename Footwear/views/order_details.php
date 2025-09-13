@@ -30,127 +30,130 @@ require_once INCLUDES_PATH . 'db_connection.php';
 </head>
 <body class="bg-gray-50 text-gray-800 min-h-screen flex flex-col">
   <?php 
-
     require_once INCLUDES_PATH . 'header.php';
 
-// Ensure user logged in and order_id present
-if (!isset($_SESSION['user_id']) || !isset($_GET['order_id'])) {
-    header('Location: orders.php');
-    exit;
-}
+    // Ensure user logged in and order_id present
+    if (!isset($_SESSION['user_id']) || !isset($_GET['order_id'])) {
+      header('Location: orders.php');
+      exit;
+    }
 
-$user_id  = (int) $_SESSION['user_id'];
-$order_id = (int) $_GET['order_id'];
+    $user_id  = (int) $_SESSION['user_id'];
+    $order_id = (int) $_GET['order_id'];
 
-// Fetch order and shipping address (assumes orders.address_id -> addresses.address_id)
-$orderSql = "
-  SELECT o.*,
+    // Fetch order and shipping address (assumes orders.address_id -> addresses.address_id)
+    $orderSql = "
+      SELECT o.*,
          a.full_name, a.address_line1, a.address_line2, a.city, a.state, a.pincode, a.phone_number AS phone,
          s.courier_name AS shipping_provider, s.tracking_number, s.shipped_at AS shipment_shipped_at, s.delivery_status
-  FROM orders o
-  LEFT JOIN addresses a ON o.address_id = a.address_id
-  LEFT JOIN shipments s ON o.order_id = s.order_id
-  WHERE o.order_id = ? AND o.user_id = ?
-  LIMIT 1
-";
-$stmt = $connection->prepare($orderSql);
-$stmt->bind_param('ii', $order_id, $user_id);
-$stmt->execute();
-$orderRes = $stmt->get_result();
-$order = $orderRes->fetch_assoc();
+      FROM orders o
+      LEFT JOIN addresses a ON o.address_id = a.address_id
+      LEFT JOIN shipments s ON o.order_id = s.order_id
+      WHERE o.order_id = ? AND o.user_id = ?
+      LIMIT 1
+    ";
+    $stmt = $connection->prepare($orderSql);
+    $stmt->bind_param('ii', $order_id, $user_id);
+    $stmt->execute();
+    $orderRes = $stmt->get_result();
+    $order = $orderRes->fetch_assoc();
 
-if (!$order) {
-    echo '<div class="p-8 max-w-3xl mx-auto text-center text-red-600">Order not found or you don\'t have permission to view it.</div>';
-    require_once INCLUDES_PATH . 'footer.php';
-    exit;
-}
+    if (!$order) {
+      echo '<div class="p-8 max-w-3xl mx-auto text-center text-red-600">Order not found or you don\'t have permission to view it.</div>';
+      require_once INCLUDES_PATH . 'footer.php';
+      exit;
+    }
 
-// Fetch order items
-$itemsSql = "
-  SELECT oi.*, p.product_name, s.size_value, pi.image_url
-  FROM order_items oi
-  LEFT JOIN products p ON oi.product_id = p.product_id
-  LEFT JOIN sizes s ON oi.size_id = s.size_id
-  LEFT JOIN product_images pi ON p.product_id = pi.product_id AND pi.is_default = 1
-  WHERE oi.order_id = ?
-";
-$stmt2 = $connection->prepare($itemsSql);
-$stmt2->bind_param('i', $order_id);
-$stmt2->execute();
-$itemsRes = $stmt2->get_result();
-$items = $itemsRes->fetch_all(MYSQLI_ASSOC);
+    // Fetch order items
+    $itemsSql = "
+      SELECT oi.*, p.product_name, s.size_value, pi.image_url
+      FROM order_items oi
+      LEFT JOIN products p ON oi.product_id = p.product_id
+      LEFT JOIN sizes s ON oi.size_id = s.size_id
+      LEFT JOIN product_images pi ON p.product_id = pi.product_id AND pi.is_default = 1
+      WHERE oi.order_id = ?
+    ";
+    $stmt2 = $connection->prepare($itemsSql);
+    $stmt2->bind_param('i', $order_id);
+    $stmt2->execute();
+    $itemsRes = $stmt2->get_result();
+    $items = $itemsRes->fetch_all(MYSQLI_ASSOC);
 
-// Helper: format money
-function money($n) { return '₹' . number_format((float)$n, 2); }
+    // Helper: format money
+    function money($n) { return '₹' . number_format((float)$n, 2); }
 
-// Map shipping provider to tracking URL template (replace {tn} with tracking number)
-$courierTemplates = [
-    'bluedart' => 'https://www.bluedart.com/tracking?AWB={tn}',
-    'delhivery' => 'https://track.delhivery.com/?cn={tn}',
-    'fedex' => 'https://www.fedex.com/apps/fedextrack/?tracknumbers={tn}',
-    'dtdc' => 'https://www.dtdc.in/tracker?awb={tn}',
-    'ekart' => 'https://ekartlogistics.com/Track/{tn}',
-    'shadowfax' => 'https://track.shadowfax.in/track/{tn}',
-    // add more as needed
-];
+    // Map shipping provider to tracking URL template (replace {tn} with tracking number)
+    $courierTemplates = [
+      'bluedart' => 'https://www.bluedart.com/tracking?AWB={tn}',
+      'delhivery' => 'https://track.delhivery.com/?cn={tn}',
+      'fedex' => 'https://www.fedex.com/apps/fedextrack/?tracknumbers={tn}',
+      'dtdc' => 'https://www.dtdc.in/tracker?awb={tn}',
+      'ekart' => 'https://ekartlogistics.com/Track/{tn}',
+      'shadowfax' => 'https://track.shadowfax.in/track/{tn}',
+      // add more as needed
+    ];
 
-// Determine human-friendly provider and tracking link
-$providerRaw = trim(strtolower($order['shipping_provider'] ?? ''));
-$providerKey = '';
-foreach ($courierTemplates as $k => $t) {
-    if ($providerRaw !== '' && strpos($providerRaw, $k) !== false) { $providerKey = $k; break; }
-}
-$trackingNumber = trim($order['tracking_number'] ?? '');
-$trackingUrl = '';
-if ($providerKey && $trackingNumber) {
-    $trackingUrl = str_replace('{tn}', urlencode($trackingNumber), $courierTemplates[$providerKey]);
-} elseif ($trackingNumber) {
-    // fallback to Google search for tracking number + provider or standalone
-    $query = urlencode(($order['shipping_provider'] ?? '') . ' ' . $trackingNumber);
-    $trackingUrl = "https://www.google.com/search?q={$query}";
-}
+    // Determine human-friendly provider and tracking link
+    $providerRaw = trim(strtolower($order['shipping_provider'] ?? ''));
+    $providerKey = '';
+    foreach ($courierTemplates as $k => $t) {
+      if ($providerRaw !== '' && strpos($providerRaw, $k) !== false) { 
+        $providerKey = $k; break; 
+      }
+    }
 
-// Determine order progress steps
-$steps = [
-    ['key' => 'ordered', 'label' => 'Ordered', 'time' => $order['placed_at'] ?? null],
-    ['key' => 'paid', 'label' => 'Payment Received', 'time' => $order['paid_at'] ?? null],
-    ['key' => 'processing', 'label' => 'Processing', 'time' => $order['paid_at'] ?? null], // keep same as paid if no separate
-    ['key' => 'shipped', 'label' => 'Shipped', 'time' => $order['shipment_shipped_at'] ?? null],
-    ['key' => 'delivered', 'label' => 'Delivered', 'time' => $order['delivered_at'] ?? null],
-];
+    $trackingNumber = trim($order['tracking_number'] ?? '');
+    $trackingUrl = '';
+    if ($providerKey && $trackingNumber) {
+      $trackingUrl = str_replace('{tn}', urlencode($trackingNumber), $courierTemplates[$providerKey]);
+    } elseif ($trackingNumber) {
+      // fallback to Google search for tracking number + provider or standalone
+      $query = urlencode(($order['shipping_provider'] ?? '') . ' ' . $trackingNumber);
+      $trackingUrl = "https://www.google.com/search?q={$query}";
+    }
 
-// Compute active index for styling. Priority: delivered > shipped > paid > placed (placed always present)
-$activeIndex = 0;
-if (!empty($order['delivered_at'])) {
-    foreach ($steps as $i => $s) if ($s['key'] === 'delivered') $activeIndex = $i;
-} elseif (!empty($order['shipment_shipped_at'])) {
-    foreach ($steps as $i => $s) if ($s['key'] === 'shipped') $activeIndex = $i;
-} elseif (!empty($order['paid_at'])) {
-    foreach ($steps as $i => $s) if ($s['key'] === 'paid') $activeIndex = $i;
-} else {
+    // Determine order progress steps
+    $steps = [
+      ['key' => 'ordered', 'label' => 'Ordered', 'time' => $order['placed_at'] ?? null],
+      ['key' => 'paid', 'label' => 'Payment Received', 'time' => $order['paid_at'] ?? null],
+      ['key' => 'processing', 'label' => 'Processing', 'time' => $order['paid_at'] ?? null], // keep same as paid if no separate
+      ['key' => 'shipped', 'label' => 'Shipped', 'time' => $order['shipment_shipped_at'] ?? null],
+      ['key' => 'delivered', 'label' => 'Delivered', 'time' => $order['delivered_at'] ?? null],
+    ];
+
+    // Compute active index for styling. Priority: delivered > shipped > paid > placed (placed always present)
     $activeIndex = 0;
-}
+    if (!empty($order['delivered_at'])) {
+      foreach ($steps as $i => $s) if ($s['key'] === 'delivered') $activeIndex = $i;
+    } elseif (!empty($order['shipment_shipped_at'])) {
+      foreach ($steps as $i => $s) if ($s['key'] === 'shipped') $activeIndex = $i;
+    } elseif (!empty($order['paid_at'])) {
+      foreach ($steps as $i => $s) if ($s['key'] === 'paid') $activeIndex = $i;
+    } else {
+      $activeIndex = 0;
+    }
 
-// Expected delivery estimate: prefer shipped_at + 3 days, otherwise placed_at + 5 days.
-$expectedDelivery = null;
-if (!empty($order['shipped_at'])) {
-    $expectedDelivery = date('d M Y', strtotime('+3 days', strtotime($order['shipped_at'])));
-} elseif (!empty($order['placed_at'])) {
-    $expectedDelivery = date('d M Y', strtotime('+5 days', strtotime($order['placed_at'])));
-}
+    // Expected delivery estimate: prefer shipped_at + 3 days, otherwise placed_at + 5 days.
+    $expectedDelivery = null;
+    if (!empty($order['shipped_at'])) {
+      $expectedDelivery = date('d M Y', strtotime('+3 days', strtotime($order['shipped_at'])));
+    } elseif (!empty($order['placed_at'])) {
+      $expectedDelivery = date('d M Y', strtotime('+5 days', strtotime($order['placed_at'])));
+    }
 
-// Calculate totals (fallback to order totals if present)
-$totalFromItems = 0;
-foreach ($items as $it) {
-    $qty = (int)($it['quantity'] ?? 1);
-    $price = (float)($it['price'] ?? 0);
-    $totalFromItems += $qty * $price;
-}
-$displaySubtotal = isset($order['subtotal_amount']) ? (float)$order['subtotal_amount'] : $totalFromItems;
-$discount = isset($order['discount_amount']) ? (float)$order['discount_amount'] : 0.00;
-$tax = isset($order['tax_amount']) ? (float)$order['tax_amount'] : 0.00;
-$shippingCharge = isset($order['shipping_amount']) ? (float)$order['shipping_amount'] : 0.00;
-$grandTotal = isset($order['total_amount']) ? (float)$order['total_amount'] : ($displaySubtotal - $discount + $tax + $shippingCharge);
+    // Calculate totals (fallback to order totals if present)
+    $totalFromItems = 0;
+    foreach ($items as $it) {
+      $qty = (int)($it['quantity'] ?? 1);
+      $price = (float)($it['price'] ?? 0);
+      $totalFromItems += $qty * $price;
+    }
+
+    $displaySubtotal = isset($order['subtotal_amount']) ? (float)$order['subtotal_amount'] : $totalFromItems;
+    $discount = isset($order['discount_amount']) ? (float)$order['discount_amount'] : 0.00;
+    $tax = isset($order['tax_amount']) ? (float)$order['tax_amount'] : 0.00;
+    $shippingCharge = isset($order['shipping_amount']) ? (float)$order['shipping_amount'] : 0.00;
+    $grandTotal = isset($order['total_amount']) ? (float)$order['total_amount'] : ($displaySubtotal - $discount + $tax + $shippingCharge);
 
   ?>
 
