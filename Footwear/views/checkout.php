@@ -184,7 +184,7 @@ $cart_items = [];
 $subtotal = 0;
 $discount_total = 0;
 $tax_total = 0;
-$product_id = $_POST['product_id'];
+$product_id = isset($_POST['product_id']) ? (int)$_POST['product_id'] : null;
 
 while ($item = $cart_result->fetch_assoc()) {
     $base_price = $item['selling_price'] * $item['quantity'];
