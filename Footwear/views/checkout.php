@@ -4,6 +4,7 @@ require_once INCLUDES_PATH . 'db_connection.php';
 ?>
 
 <?php
+// ---------------- HELPER FUNCTIONS ---------------- //
 function getProductTaxRate($connection, $product_id) {
     $sql = "
         SELECT t.tax_rate
@@ -90,8 +91,7 @@ function getOrderDiscount($connection, $subtotal) {
     return 0;
 }
 
-function getShippingCharge($connection, $subtotal){
-  $region = $address['state'] ?? null; // you can use pincode/state later
+function getShippingCharge($connection, $subtotal, $region = null){
   
   $sql = "
         SELECT charge
@@ -156,7 +156,7 @@ $single_checkout = isset($_POST['single_checkout']) ? true : false;
 
 if ($single_checkout && !empty($_POST['cart_id'])) {
     // Fetch only that cart item
-    $cart_sql = "SELECT c.cart_id, c.quantity, p.product_name, p.selling_price, s.size_value, pi.image_url
+    $cart_sql = "SELECT c.cart_id, c.quantity, p.product_id, p.product_name, p.selling_price, s.size_value, pi.image_url
                  FROM cart c
                  JOIN products p ON c.product_id = p.product_id
                  JOIN sizes s ON c.size_id = s.size_id
@@ -168,7 +168,7 @@ if ($single_checkout && !empty($_POST['cart_id'])) {
     $cart_result = $stmt->get_result();
 } else {
     // Fetch all cart items
-    $sql = "SELECT c.cart_id, c.quantity, p.product_name, p.selling_price, s.size_value, pi.image_url
+    $sql = "SELECT c.cart_id, c.quantity, p.product_id, p.product_name, p.selling_price, s.size_value, pi.image_url
             FROM cart c
             JOIN products p ON c.product_id = p.product_id
             JOIN sizes s ON c.size_id = s.size_id
@@ -184,18 +184,19 @@ $cart_items = [];
 $subtotal = 0;
 $discount_total = 0;
 $tax_total = 0;
-$product_id = isset($_POST['product_id']) ? (int)$_POST['product_id'] : null;
 
+// remove earlier $product_id assignment — we'll use per-item product_id
 while ($item = $cart_result->fetch_assoc()) {
     $base_price = $item['selling_price'] * $item['quantity'];
+    $prod_id = (int)$item['product_id'];
 
-    // Apply product/brand/category discount
-    $discount = getProductDiscount($connection, $product_id, $base_price);
+    // Per-item discount (pass the product id and the base_price)
+    $discount = getProductDiscount($connection, $prod_id, $base_price);
     $price_after_discount = $base_price - $discount;
 
-    // Apply tax on discounted price
-    $tax_rate = getProductTaxRate($connection, $product_id);
-    $tax = $price_after_discount * ($tax_rate / 100);
+    // Per-item tax rate and tax amount on discounted price
+    $tax_rate = getProductTaxRate($connection, $prod_id);
+    $tax = round($price_after_discount * ($tax_rate / 100), 2);
 
     // Totals
     $subtotal += $base_price;
@@ -206,11 +207,13 @@ while ($item = $cart_result->fetch_assoc()) {
     $item['base_price'] = $base_price;
     $item['discount'] = $discount;
     $item['tax'] = $tax;
+    $item['subtotal'] = $price_after_discount + $tax;
     $cart_items[] = $item;
 }
 
 // Shipping
-$shipping = getShippingCharge($connection, $subtotal);
+// e.g., if you have a default address earlier, set $region = $default_address['state'] ?? null;
+$shipping = getShippingCharge($connection, $subtotal, null);
 
 // Order-level discount
 $order_discount = getOrderDiscount($connection, $subtotal - $discount_total);
@@ -227,59 +230,96 @@ $addr_stmt->execute();
 $addresses = $addr_stmt->get_result();
 ?>
 
-<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+<?php
+// ✅ Debug block - only runs if you pass ?debug=1 in URL
+if (isset($_GET['debug']) && $_GET['debug'] == 1) {
+    echo "<pre>";
+    echo "SESSION USER:\n";
+    print_r($_SESSION);
+
+    echo "\nCART ITEMS (raw from DB):\n";
+    $cart_result->data_seek(0); // reset pointer in case loop already ran
+    while ($row = $cart_result->fetch_assoc()) {
+        print_r($row);
+    }
+
+    echo "\nCART ITEMS (after processing):\n";
+    print_r($cart_items);
+
+    echo "\nTOTALS:\n";
+    echo "Subtotal: $subtotal\n";
+    echo "Discount total: $discount_total\n";
+    echo "Tax total: $tax_total\n";
+    echo "Shipping: $shipping\n";
+    echo "Order Discount: $order_discount\n";
+    echo "Grand Total: $grand_total\n";
+
+    echo "</pre>";
+    // exit; // uncomment if you want to stop page rendering after debug
+}
+?>
+
+
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-10">
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-    <!-- LEFT: Checkout flow (addresses + payment) -->
+
+    <!-- LEFT SIDE: checkout process -->
     <section class="lg:col-span-2 space-y-6">
-      <div class="bg-white rounded-2xl shadow p-6">
-        <div class="flex items-center justify-between">
-          <h1 class="text-2xl font-semibold">Checkout</h1>
-          <div class="text-sm text-gray-500">Secure checkout • SSL encrypted</div>
+
+      <!-- Page header -->
+      <div class="bg-white rounded-2xl shadow p-4 sm:p-6 flex items-center justify-between">
+        <h1 class="text-xl sm:text-2xl font-semibold">Checkout</h1>
+        <span class="hidden sm:block text-sm text-gray-500">Secure checkout • SSL encrypted</span>
+      </div>
+
+      <!-- Inline order summary (only mobile & tablet) -->
+      <div class="bg-white rounded-2xl shadow p-4 sm:p-6 lg:hidden">
+        <h2 class="text-lg font-medium mb-3">Order Summary</h2>
+        <div class="space-y-2 text-sm">
+          <div class="flex justify-between"><span>Subtotal</span><span>₹<?= number_format($subtotal,2) ?></span></div>
+          <div class="flex justify-between"><span>Discounts</span><span class="text-red-600">-₹<?= number_format($discount_total + $order_discount,2) ?></span></div>
+          <div class="flex justify-between"><span>Tax</span><span class="text-green-600">+₹<?= number_format($tax_total,2) ?></span></div>
+          <div class="flex justify-between"><span>Shipping</span><span class="text-green-600"><?= $shipping ? '₹'.number_format($shipping,2) : 'Free' ?></span></div>
+          <div class="border-t pt-2 flex justify-between font-bold"><span>Total</span><span>₹<?= number_format($grand_total,2) ?></span></div>
         </div>
       </div>
 
-      <!-- Order summary (compact) -->
-      <div class="bg-white rounded-2xl shadow p-6">
-        <h2 class="text-lg font-medium mb-4">Order Summary</h2>
-
-        <?php if (empty($cart_items)): ?>
-          <div class="text-center py-10 text-gray-600">
-            Your cart is empty. <a href="<?= BASE_URL ?>views/products.php" class="text-blue-600 underline">Start shopping</a>
-          </div>
-        <?php else: ?>
-          <ul class="divide-y divide-gray-100">
-            <?php foreach ($cart_items as $idx => $item): ?>
-              <li class="py-4 flex gap-4 items-center">
-                <div class="w-20 h-20 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
-                  <img src="<?= UPLOADS_URL . htmlspecialchars($item['image_url']) ?>" alt="<?= htmlspecialchars($item['product_name']) ?>"
-                       class="w-full h-full object-cover">
-                </div>
-
-                <div class="flex-1 min-w-0">
-                  <p class="font-semibold text-gray-900 truncate"><?= htmlspecialchars($item['product_name']) ?></p>
-                  <p class="text-sm text-gray-500">Size: <?= htmlspecialchars($item['size_value']) ?> • Qty: <?= (int)$item['quantity'] ?></p>
-                </div>
-
-                <div class="text-right">
-                  <p class="font-medium">₹<?= number_format($item['selling_price'], 2) ?></p>
-                  <p class="text-sm text-gray-500">₹<?= number_format($item['selling_price'] * $item['quantity'], 2) ?></p>
-                </div>
-              </li>
+      <!-- Cart items (scrollable on small screens) -->
+      <div class="bg-white rounded-2xl shadow p-4 sm:p-6 overflow-x-auto safe-scroll">
+        <table class="w-full min-w-[600px] text-sm">
+          <thead class="bg-gray-100">
+            <tr>
+              <th class="p-3 text-left">Item</th>
+              <th class="p-3">Product</th>
+              <th class="p-3">Price</th>
+              <th class="p-3">Qty</th>
+              <th class="p-3">Discount</th>
+              <th class="p-3">Tax</th>
+              <th class="p-3">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($cart_items as $item): ?>
+              <tr class="border-t">
+                <td class="p-3 w-24">
+                  <img src="<?= UPLOADS_URL . $item['image_url'] ?>" class="w-14 h-14 sm:w-16 sm:h-16 object-cover rounded-lg border">
+                </td>
+                <td class="p-3"><?= htmlspecialchars($item['product_name']) ?></td>
+                <td class="p-3">₹<?= number_format($item['selling_price'], 2) ?></td>
+                <td class="p-3"><?= $item['quantity'] ?></td>
+                <td class="p-3">
+                  <?php if ($item['discount'] > 0 || $order_discount > 0): ?>
+                    <?php $item_discount = $item['discount'] + ($order_discount * ($item['base_price'] / $subtotal)); ?>
+                    <span class="text-red-600">-₹<?= number_format($item_discount, 2) ?></span>
+                  <?php else: ?> —
+                  <?php endif; ?>
+                </td>
+                <td class="p-3 text-green-600"><?= $item['tax'] > 0 ? '-₹'.number_format($item['tax'], 2) : '—' ?></td>
+                <td class="p-3">₹<?= number_format($item['subtotal'], 2) ?></td>
+              </tr>
             <?php endforeach; ?>
-          </ul>
-        <?php endif; ?>
-
-        <div class="mt-6 border-t pt-4 space-y-2 text-sm text-gray-700">
-  <div class="flex justify-between"><span>Subtotal</span><span>₹<?= number_format($subtotal, 2) ?></span></div>
-  <div class="flex justify-between"><span>Product Discounts</span><span>-₹<?= number_format($discount_total, 2) ?></span></div>
-  <div class="flex justify-between"><span>Tax</span><span>₹<?= number_format($tax_total, 2) ?></span></div>
-  <div class="flex justify-between"><span>Shipping</span><span><?= $shipping ? '₹' . number_format($shipping,2) : 'Free' ?></span></div>
-  <div class="flex justify-between"><span>Order Discount</span><span>-₹<?= number_format($order_discount, 2) ?></span></div>
-  <div class="flex justify-between text-lg font-semibold pt-2 border-t pt-3">
-    <span>Total</span><span>₹<?= number_format($grand_total, 2) ?></span>
-  </div>
-</div>
-
+          </tbody>
+        </table>
       </div>
 
       <!-- Address + Payment form -->
@@ -410,10 +450,10 @@ $addresses = $addr_stmt->get_result();
           </div>
 
           <input type="hidden" name="subtotal_amount" value="<?= htmlspecialchars($subtotal) ?>">
-<input type="hidden" name="discount_amount" value="<?= htmlspecialchars($discount_total + $order_discount) ?>">
-<input type="hidden" name="tax_amount" value="<?= htmlspecialchars($tax_total) ?>">
-<input type="hidden" name="shipping_amount" value="<?= htmlspecialchars($shipping) ?>">
-<input type="hidden" name="total_amount" value="<?= htmlspecialchars($grand_total) ?>">
+          <input type="hidden" name="discount_amount" value="<?= htmlspecialchars($discount_total + $order_discount) ?>">
+          <input type="hidden" name="tax_amount" value="<?= htmlspecialchars($tax_total) ?>">
+          <input type="hidden" name="shipping_amount" value="<?= htmlspecialchars($shipping) ?>">
+          <input type="hidden" name="total_amount" value="<?= htmlspecialchars($grand_total) ?>">
 
           <button id="placeOrderBtn" type="submit" class="w-full sm:w-auto px-6 py-3 bg-black text-white rounded-lg font-medium hover:bg-yellow-400 hover:text-black transition">
             ✅ Place Order
@@ -421,25 +461,27 @@ $addresses = $addr_stmt->get_result();
         </div>
 
       </form>
+
     </section>
 
-    <!-- RIGHT: Order summary sticky -->
+    <!-- RIGHT SIDE: sticky order summary (desktop only) -->
     <aside class="hidden lg:block">
-      <div class="sticky top-20 space-y-4">
+      <div class="sticky top-24 space-y-4">
         <div class="bg-white rounded-2xl p-5 shadow">
           <h4 class="text-lg font-semibold mb-3">Order Summary</h4>
-          <div class="space-y-3 text-sm text-gray-700">
+          <div class="space-y-2 text-sm">
             <div class="flex justify-between"><span>Subtotal</span><span>₹<?= number_format($subtotal,2) ?></span></div>
-            <div class="flex justify-between"><span>Tax</span><span>₹<?= number_format($tax_total,2) ?></span></div>
-            <div class="flex justify-between"><span>Shipping</span><span><?= $shipping ? '₹' . number_format($shipping,2) : 'Free' ?></span></div>
-            <div class="border-t pt-3 flex justify-between font-semibold text-lg"><span>Total</span><span>₹<?= number_format($grand_total,2) ?></span></div>
+            <div class="flex justify-between"><span>Discounts</span><span class="text-red-600">-₹<?= number_format($discount_total + $order_discount,2) ?></span></div>
+            <div class="flex justify-between"><span>Tax</span><span class="text-green-600">+₹<?= number_format($tax_total,2) ?></span></div>
+            <div class="flex justify-between"><span>Shipping</span><span class="text-green-600"><?= $shipping ? '₹'.number_format($shipping,2) : 'Free' ?></span></div>
+            <div class="border-t pt-3 flex justify-between font-bold text-lg"><span>Total</span><span>₹<?= number_format($grand_total,2) ?></span></div>
+            <div class="mt-5 hover:shadow-lg transition">
+            <a href="<?= BASE_URL ?>views/products.php" class="block text-center w-full py-2 border rounded-lg text-sm text-gray-700 border-gray-300 
+            hover:bg-gray-100 hover:text-gray-900 hover:border-gray-400 
+            transition duration-200 ease-in-out">Continue shopping</a>
           </div>
-
-          <div class="mt-5">
-            <a href="<?= BASE_URL ?>views/products.php" class="block text-center w-full py-2 border rounded-lg text-sm">Continue shopping</a>
           </div>
         </div>
-
         <div class="bg-white rounded-2xl p-5 shadow text-sm">
           <h5 class="font-medium mb-2">Need help?</h5>
           <p class="text-gray-600">Contact our 24/7 support or call <span class="font-semibold">+91 1800 123 456</span></p>

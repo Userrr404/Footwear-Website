@@ -2,6 +2,126 @@
 require_once '../config.php';
 require_once INCLUDES_PATH . 'db_connection.php';
 require_once '../includes/user_activity.php';
+
+// ---------------- HELPER FUNCTIONS ---------------- //
+function getProductTaxRate($connection, $product_id) {
+    $sql = "
+        SELECT t.tax_rate
+        FROM products p
+        LEFT JOIN tax_rules t
+          ON (
+          (t.brand_id = p.brand_id)
+           OR (t.category_id = p.category_id)
+          )
+        WHERE p.product_id = ?
+          AND t.status = 'active'
+          AND t.effective_from <= CURDATE()
+          AND (t.effective_to IS NULL OR t.effective_to >= CURDATE())
+        ORDER BY t.priority DESC
+        LIMIT 1
+    ";
+    $stmt = $connection->prepare($sql);
+    $stmt->bind_param("i", $product_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($row = $result->fetch_assoc()) {
+        return $row['tax_rate'];
+    }
+    return 0; // default no tax
+}
+
+function getProductDiscount($connection, $product_id, $price) {
+    $sql = "
+        SELECT d.discount_type, d.value
+        FROM products p
+        LEFT JOIN discount d
+          ON (
+              (d.applicable_to = 'product' AND d.applicable_id = p.product_id)
+           OR (d.applicable_to = 'brand' AND d.applicable_id = p.brand_id)
+           OR (d.applicable_to = 'category' AND d.applicable_id = p.category_id)
+          )
+        WHERE p.product_id = ?
+          AND d.status = 'active'
+          AND d.valid_from <= CURDATE()
+          AND d.valid_to >= CURDATE()
+        ORDER BY d.priority DESC
+        LIMIT 1
+    ";
+    $stmt = $connection->prepare($sql);
+    $stmt->bind_param("i", $product_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($row = $result->fetch_assoc()) {
+        if ($row['discount_type'] == 'percentage') {
+            return $price * ($row['value'] / 100);
+        } else {
+            return $row['value'];
+        }
+    }
+    return 0;
+}
+
+function getOrderDiscount($connection, $subtotal) {
+    $sql = "
+        SELECT discount_type, value
+        FROM discount
+        WHERE applicable_to = 'order'
+          AND status = 'active'
+          AND valid_from <= CURDATE()
+          AND valid_to >= CURDATE()
+          AND min_order_amount <= ?
+        ORDER BY priority DESC
+        LIMIT 1
+    ";
+    $stmt = $connection->prepare($sql);
+    $stmt->bind_param("d", $subtotal);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($row = $result->fetch_assoc()) {
+        if ($row['discount_type'] == 'percentage') {
+            return $subtotal * ($row['value'] / 100);
+        } else {
+            return $row['value'];
+        }
+    }
+    return 0;
+}
+
+function getShippingCharge($connection, $subtotal, $region = null){
+  
+  $sql = "
+        SELECT charge
+        FROM shipping_rules
+        WHERE status = 'active'
+          AND effective_from <= CURDATE()
+          AND (effective_to IS NULL OR effective_to >= CURDATE())
+          AND min_order_amount <= ?
+          AND (max_order_amount IS NULL OR max_order_amount >= ?)
+          " . ($region ? " AND (region IS NULL OR region = ?)" : "") . "
+        ORDER BY priority DESC
+        LIMIT 1
+    ";
+
+    if ($region) {
+        $stmt = $connection->prepare($sql);
+        $stmt->bind_param("dds", $subtotal, $subtotal, $region);
+    } else {
+        $stmt = $connection->prepare($sql);
+        $stmt->bind_param("dd", $subtotal, $subtotal);
+    }
+
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($row = $result->fetch_assoc()) {
+        return (float)$row['charge'];
+    }
+
+    return 50.0; // default fallback
+}
 session_start();
 
 if (!isset($_SESSION['user_id'])) {
@@ -88,33 +208,97 @@ if (!empty($_POST['shipping_address_id'])) {
 }
 
 
-// ------------------ Cart Handling ------------------ //
-$cart_sql = "SELECT * FROM cart WHERE user_id = ?";
-$cart_stmt = $connection->prepare($cart_sql);
-$cart_stmt->bind_param("i", $user_id);
-$cart_stmt->execute();
-$cart_items = $cart_stmt->get_result();
+// ------------------ Cart Handling (respect posted cart_id[] if present) ------------------ //
+$posted_cart_ids = $_POST['cart_id'] ?? []; // from checkout.php hidden inputs
+if (!empty($posted_cart_ids) && is_array($posted_cart_ids)) {
+    // Sanitize and prepare for SQL IN clause
+    $placeholders = implode(',', array_fill(0, count($posted_cart_ids), '?'));
+    $types = str_repeat('i', count($posted_cart_ids));
+    $cart_sql = "SELECT * FROM cart WHERE user_id = ? AND cart_id IN ($placeholders)";
+    $cart_stmt = $connection->prepare($cart_sql);
 
-if ($cart_items->num_rows === 0) {
+    // bind dynamically (first param user_id, then cart_ids)
+    $bind_names[] = $user_id;
+    for ($i = 0; $i < count ($posted_cart_ids); $i++) {
+        $bind_names[] = (int)$posted_cart_ids[$i];
+    }
+
+    // create types string like "i" + "iii..." for bind_param
+    $full_types = 'i' . $types;
+    // reflection to bind params dynamically
+    $a_params = array();
+    $a_params[] = & $full_types;
+    for ($i = 0; $i < count($bind_names); $i++){
+        $a_params[] = & $bind_names[$i];
+    }
+    call_user_func_array(array($cart_stmt, 'bind_param'), $a_params);
+    $cart_stmt->execute();
+    $cart_items_result = $cart_stmt->get_result();
+}else {
+    // Fetch all cart items for user
+    // No specific cart_id sent — use all items
+    $cart_sql = "SELECT * FROM cart WHERE user_id = ?";
+    $cart_stmt = $connection->prepare($cart_sql);
+    $cart_stmt->bind_param("i", $user_id);
+    $cart_stmt->execute();
+    $cart_items_result = $cart_stmt->get_result();
+}
+
+if ($cart_items_result->num_rows === 0) {
     die("Your cart is empty.");
 }
 
-$total = 0;
+// recompute subtotal, discounts, tax per-item (do not trust hidden fields)
+$subtotal = 0;
+$discount_total = 0;
+$tax_total = 0;
 $items = [];
 
-while ($item = $cart_items->fetch_assoc()) {
-    $items[] = $item;
-    $product = $connection->query("SELECT selling_price FROM products WHERE product_id = {$item['product_id']}")->fetch_assoc();
-    $total += $product['selling_price'] * $item['quantity'];
+while ($item = $cart_items_result->fetch_assoc()) {
+    $product_id = (int)$item['product_id'];
+    $qty = (int)$item['quantity'];
+    $product_row = $connection->query("SELECT product_name, selling_price FROM products WHERE product_id = $product_id")->fetch_assoc();
+    $unit_price = (float)$product_row['selling_price'];
+    $base_price = $unit_price * $qty;
+
+    // use same helper functions as checkout.php
+    $discount = getProductDiscount($connection, $product_id, $base_price);
+    $price_after_disc = $base_price - $discount;
+    $tax_rate = getProductTaxRate($connection, $product_id);
+    $tax = round($price_after_disc * ($tax_rate / 100), 2);
+
+    $line_total = $price_after_disc + $tax;
+
+    $subtotal += $base_price;
+    $discount_total += $discount;
+    $tax_total += $tax;
+    
+    $items[] = [
+        'cart_id' => (int)$item['cart_id'],
+        'product_id' => $product_id,
+        'product_name' => $product_row['product_name'],
+        'size_id' => (int)$item['size_id'],
+        'quantity' => $qty,
+        'unit_price' => $unit_price,
+        'line_base' => $base_price,
+        'discount' => $discount,
+        'tax' => $tax,
+        'line_total' => $line_total
+    ];
 }
 
+// shipping and order-level discount (recompute)
+$shipping = getShippingCharge($connection, $subtotal /*, optional region */);
+$order_discount = getOrderDiscount($connection, $subtotal - $discount_total);
+
+// Final total
+$total_amount = round($subtotal - $discount_total + $tax_total + $shipping - $order_discount, 2);
+
+// ... Address handling above should have set $address_id, $billing_address_id etc.
+// ensure $billing_address_id is defined (set to $address_id or via form)
+$billing_address_id = $_POST['billing_address_id'] ?? $address_id ?? null;
+
 // ------------------ Order Creation ------------------ //
-$shipping_address_id = $_POST['shipping_address_id'] ?? null;
-$subtotal_amount  = $_POST['subtotal_amount'] ?? 0;
-$discount_amount  = $_POST['discount_amount'] ?? 0;
-$tax_amount       = $_POST['tax_amount'] ?? 0;
-$shipping_amount  = $_POST['shipping_amount'] ?? 0;
-$total_amount     = $_POST['total_amount'] ?? 0;
 $order_number = 'ORD' . strtoupper(uniqid());
 $payment_status = 'pending';
 
@@ -124,17 +308,20 @@ $order_stmt = $connection->prepare("
      shipping_address_id, billing_address_id, payment_method, payment_status) 
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ");
+
+$final_discount = $discount_total + $order_discount; // final discount (product + order-level)
+
 $order_stmt->bind_param(
     "siiddddiisss",
     $order_number,
     $address_id,
     $user_id,
-    $subtotal_amount,
-    $discount_amount,
-    $tax_amount,
-    $shipping_amount,
+    $subtotal,
+    $final_discount,
+    $tax_total,
+    $shipping,
     $total_amount,
-    $shipping_address_id,
+    $address_id, // shipping_address_id
     $billing_address_id,
     $payment_method,
     $payment_status
@@ -142,22 +329,35 @@ $order_stmt->bind_param(
 $order_stmt->execute();
 $order_id = $order_stmt->insert_id;
 
-// ------------------ Order Items ------------------ //
-foreach ($items as $item) {
-    $product = $connection->query("SELECT product_name, selling_price FROM products WHERE product_id = {$item['product_id']}")->fetch_assoc();
-    $price = $product['selling_price'];
-    $product_name = $product['product_name'];
+// ------------------ Insert Order Items (per-item values) ------------------ //
+$item_stmt = $connection->prepare("
+    INSERT INTO order_items (order_id, product_id, product_name, size_id, quantity, price, discount, tax, total) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+");
 
-    $stmt = $connection->prepare("
-        INSERT INTO order_items (order_id, product_id, product_name, size_id, quantity, price, discount, tax, total) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ");
-    $stmt->bind_param("iisiidddd", $order_id, $item['product_id'], $product_name, $item['size_id'], $item['quantity'], $price, $discount_amount, $tax_amount, $total_amount);
-    $stmt->execute();
+foreach ($items as $it) {
+    $item_stmt->bind_param(
+        "iisiidddd",
+        $order_id,
+        $it['product_id'],
+        $it['product_name'],
+        $it['size_id'],
+        $it['quantity'],
+        $it['unit_price'],
+        $it['discount'],
+        $it['tax'],
+        $it['line_total']
+    );
+    $item_stmt->execute();
 }
 
 // ------------------ Cart Cleanup ------------------ //
-$connection->query("DELETE FROM cart WHERE user_id = $user_id");
+// Delete only the cart_ids we inserted (safer for single-item checkout)
+$cart_ids_to_remove = array_column($items, 'cart_id');
+if (!empty($cart_ids_to_remove)) {
+    $ids = implode(',', array_map('intval', $cart_ids_to_remove));
+    $connection->query("DELETE FROM cart WHERE cart_id IN ($ids)");
+}
 
 // ------------------ Email ------------------ //
 $user_email = $connection->query("SELECT user_email FROM users WHERE user_id = $user_id")->fetch_assoc()['user_email'];
