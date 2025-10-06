@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $update->execute();
             $update->close();
 
-            header("Location: dashboard.php");
+            header("Location: index.php");
             exit;
         } else {
             logUserActivity($user['user_id'], 'login', 'Wrong password', 0);

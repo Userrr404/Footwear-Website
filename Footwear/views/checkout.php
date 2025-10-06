@@ -314,7 +314,7 @@ if (isset($_GET['debug']) && $_GET['debug'] == 1) {
                   <?php else: ?> —
                   <?php endif; ?>
                 </td>
-                <td class="p-3 text-green-600"><?= $item['tax'] > 0 ? '-₹'.number_format($item['tax'], 2) : '—' ?></td>
+                <td class="p-3 text-green-600"><?= $item['tax'] > 0 ? '+₹'.number_format($item['tax'], 2) : '—' ?></td>
                 <td class="p-3">₹<?= number_format($item['subtotal'], 2) ?></td>
               </tr>
             <?php endforeach; ?>
@@ -387,59 +387,14 @@ if (isset($_GET['debug']) && $_GET['debug'] == 1) {
             </label>
 
             <label class="flex items-center gap-3 p-3 border rounded-lg hover:shadow transition cursor-pointer">
-              <input type="radio" name="payment_method" value="UPI" class="form-radio h-4 w-4">
+              <input type="radio" name="payment_method" value="UPI" class="form-radio h-4 w-4" required>
               <div>
                 <div class="font-semibold">UPI</div>
-                <div class="text-sm text-gray-500">Pay instantly with UPI</div>
-              </div>
-            </label>
-
-            <label class="flex items-center gap-3 p-3 border rounded-lg hover:shadow transition cursor-pointer">
-              <input type="radio" name="payment_method" value="credit_card" class="form-radio h-4 w-4">
-              <div>
-                <div class="font-semibold">Credit card</div>
-                <div class="text-sm text-gray-500">Visa, Mastercredit_card, Rupay</div>
-              </div>
-            </label>
-
-            <label class="flex items-center gap-3 p-3 border rounded-lg hover:shadow transition cursor-pointer">
-              <input type="radio" name="payment_method" value="debit_card" class="form-radio h-4 w-4">
-              <div>
-                <div class="font-semibold">Debit card</div>
-                <div class="text-sm text-gray-500">Visa, Mastercredit_card, Rupay</div>
+                <div class="text-sm text-gray-500">Pay instantly with Razorpay</div>
               </div>
             </label>
           </div>
 
-          <!-- Dynamic payment details -->
-          <div id="payment-details" class="mt-4 space-y-3">
-            <!-- UPI input -->
-            <div id="UPI-box" class="hidden">
-              <label class="block text-sm font-medium text-gray-700">Enter UPI ID</label>
-              <input name="UPI_id" type="text" placeholder="example@bank" class="mt-1 block w-full py-2 px-3 border rounded-lg" />
-            </div>
-
-            <!-- credit_card fields (dummy; in prod use tokenized gateway) -->
-            <div id="credit_card-box" class="hidden space-y-2">
-              <label class="block text-sm font-medium text-gray-700">credit card details</label>
-              <input name="credit_card_number" type="text" placeholder="credit_card number" class="py-2 px-3 border rounded-lg w-full" />
-              <div class="grid grid-cols-2 gap-3">
-                <input name="credit_card_expiry" type="text" placeholder="MM/YY" class="py-2 px-3 border rounded-lg" />
-                <input name="credit_card_cvc" type="text" placeholder="CVC" class="py-2 px-3 border rounded-lg" />
-              </div>
-              <div class="text-xs text-gray-500">We don't store credit card details — payments are processed via your chosen gateway.</div>
-            </div>
-
-            <div id="debit_card-box" class="hidden space-y-2">
-              <label class="block text-sm font-medium text-gray-700">Debit card details</label>
-              <input name="debit_card_number" type="text" placeholder="debit_card number" class="py-2 px-3 border rounded-lg w-full" />
-              <div class="grid grid-cols-2 gap-3">
-                <input name="debit_card_expiry" type="text" placeholder="MM/YY" class="py-2 px-3 border rounded-lg" />
-                <input name="debit_card_cvc" type="text" placeholder="CVC" class="py-2 px-3 border rounded-lg" />
-              </div>
-              <div class="text-xs text-gray-500">We don't store debit card details — payments are processed via your chosen gateway.</div>
-            </div>
-          </div>
         </div>
 
         <!-- Totals & Place Order -->
@@ -493,30 +448,7 @@ if (isset($_GET['debug']) && $_GET['debug'] == 1) {
 
 <?php require_once INCLUDES_PATH . 'footer.php'; ?>
 
-<!-- Minimal JS for payment method toggle (progressive enhancement) -->
-<script>
-  (function() {
-    const radios = document.querySelectorAll('input[name="payment_method"]');
-    const UPIBox = document.getElementById('UPI-box');
-    const credit_cardBox = document.getElementById('credit_card-box');
-    const debit_cardBox = document.getElementById('debit_card-box');
 
-    function togglePaymentBoxes() {
-      const val = document.querySelector('input[name="payment_method"]:checked')?.value;
-      UPIBox.classList.add('hidden');
-      credit_cardBox.classList.add('hidden');
-      debit_cardBox.classList.add('hidden');
-
-      if (val === 'UPI') UPIBox.classList.remove('hidden');
-      if (val === 'credit_card') credit_cardBox.classList.remove('hidden');
-      if (val === 'debit_card') debit_cardBox.classList.remove('hidden');
-    }
-
-    radios.forEach(r => r.addEventListener('change', togglePaymentBoxes));
-    // init on page load (if browser pre-selects)
-    togglePaymentBoxes();
-  })();
-</script>
 
 </body>
 </html>

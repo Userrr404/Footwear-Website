@@ -20,6 +20,9 @@ define('DB_USER', 'root');
 define('DB_PASS', '');
 define('DB_NAME', 'footwear_db');
 
+define('RAZORPAY_KEY_ID', 'rzp_test_RJKlS0sGzGVCrp'); // test key from Razorpay dashboard
+define('RAZORPAY_KEY_SECRET', 'eMNQRnWTgVJ8OOoCqhX6h7vN');
+
 // ========== Error Reporting ==========
 error_reporting(E_ALL);
 ini_set('display_errors', 1);

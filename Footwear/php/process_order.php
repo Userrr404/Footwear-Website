@@ -3,6 +3,12 @@ require_once '../config.php';
 require_once INCLUDES_PATH . 'db_connection.php';
 require_once '../includes/user_activity.php';
 
+require_once '../../razorpay-php-master/Razorpay.php';
+use Razorpay\Api\Api;
+
+// ------------- Enable exceptions for mysqli ------------- //
+mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+
 // ---------------- HELPER FUNCTIONS ---------------- //
 function getProductTaxRate($connection, $product_id) {
     $sql = "
@@ -299,56 +305,237 @@ $total_amount = round($subtotal - $discount_total + $tax_total + $shipping - $or
 $billing_address_id = $_POST['billing_address_id'] ?? $address_id ?? null;
 
 // ------------------ Order Creation ------------------ //
-$order_number = 'ORD' . strtoupper(uniqid());
-$payment_status = 'pending';
+// $order_number = 'ORD' . strtoupper(uniqid());
+// $payment_status = 'pending';
+$payment_provider = ($payment_method == 'cash') ? 'manual' : 'razorpay';
+$payment_status = ($payment_method == 'cash') ? 'pending' : 'authorized';
 
-$order_stmt = $connection->prepare("
-    INSERT INTO orders 
-    (order_number, address_id, user_id, subtotal_amount, discount_amount, tax_amount, shipping_amount, total_amount, 
-     shipping_address_id, billing_address_id, payment_method, payment_status) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-");
-
+// ✅ Receive order data from frontend
+$shipping_address_id = $_POST['shipping_address_id'];
+$currency            = 'INR';
 $final_discount = $discount_total + $order_discount; // final discount (product + order-level)
 
-$order_stmt->bind_param(
-    "siiddddiisss",
-    $order_number,
-    $address_id,
-    $user_id,
-    $subtotal,
-    $final_discount,
-    $tax_total,
-    $shipping,
-    $total_amount,
-    $address_id, // shipping_address_id
-    $billing_address_id,
-    $payment_method,
-    $payment_status
-);
-$order_stmt->execute();
-$order_id = $order_stmt->insert_id;
+// Near top of file, ensure payment method is normalized
+// $payment_method = strtolower($_POST['payment_method'] ?? '');
+if($payment_method === 'UPI'){
 
-// ------------------ Insert Order Items (per-item values) ------------------ //
-$item_stmt = $connection->prepare("
-    INSERT INTO order_items (order_id, product_id, product_name, size_id, quantity, price, discount, tax, total) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-");
+    $keyId = "rzp_test_RJKlS0sGzGVCrp";
+    $keySecret = "eMNQRnWTgVJ8OOoCqhX6h7vN";
 
-foreach ($items as $it) {
-    $item_stmt->bind_param(
-        "iisiidddd",
-        $order_id,
-        $it['product_id'],
-        $it['product_name'],
-        $it['size_id'],
-        $it['quantity'],
-        $it['unit_price'],
-        $it['discount'],
-        $it['tax'],
-        $it['line_total']
+    $api = new Api($keyId, $keySecret);
+
+    $razorpayOrder = $api->order->create([
+        'receipt'=>'rcpt_'.uniqid(),
+        'amount'=>$total_amount*100,
+        'currency'=>'INR',
+        'payment_capture'=>1,
+        'notes'=>['user_id'=>$user_id]
+    ]);
+
+    // Store session for finalize_order.php
+    // Convert to array
+    $razorpayOrderArray = $razorpayOrder->toArray();
+    $_SESSION['rzp_order_id'] = $razorpayOrderArray['id'];
+    $_SESSION['razorpay_amount'] = $total_amount;
+    $_SESSION['razorpay_currency'] = 'INR';
+    $_SESSION['order_temp_data'] = [
+        'product_name' => $product_name,
+        'size_id'  => $size_id,
+        'subtotal' => $subtotal,
+        'discount' => $discount_total + $order_discount,
+        'tax'      => $tax_total,
+        'shipping' => $shipping,
+        'total'    => $total_amount,
+        'address_id' => $address_id,
+        'payment_method' => $payment_method,
+        'items' => $items
+    ];
+
+    // Insert temporary record into payment_sessions table
+    $session_uuid = uniqid('sess_'); // or use bin2hex(random_bytes(16)) for stronger UUID
+    $session_sql = "INSERT INTO payment_sessions (session_uuid, user_id, rzp_order_id, amount, currency, status) VALUES (?, ?, ?, ?, ?, 'created')";
+    $sess_stmt = $connection->prepare($session_sql);
+    $sess_stmt->bind_param("sisds", $session_uuid, $user_id, $razorpayOrderArray['id'], $total_amount, $currency);
+    $sess_stmt->execute();
+
+    // Redirect user to Razorpay payment UI
+    header("Location: " . BASE_URL . "php/payment.php?order_id=" . urlencode($razorpayOrder['id']));
+    exit;
+}
+
+
+// Begin Transaction
+try {
+    $connection->begin_transaction();
+
+    // -------------------------------------------------------------------------
+    // 1️⃣ Create ORDER
+    // -------------------------------------------------------------------------
+    $order_uuid = uniqid('ORD_');
+    $order_number = 'ORD' . strtoupper(uniqid());
+    $order_sql = "
+        INSERT INTO orders (
+            order_number, address_id, user_id, subtotal_amount, discount_amount, tax_amount, shipping_amount, total_amount, 
+            shipping_address_id, billing_address_id, payment_method, payment_status, currency, order_uuid
+        ) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ";
+
+    $stmt = $connection->prepare($order_sql);
+    $stmt->bind_param(
+        "siiddddiisssss",
+        $order_number,
+        $address_id,
+        $user_id,
+        $subtotal,
+        $final_discount,
+        $tax_total,
+        $shipping,
+        $total_amount,
+        $address_id, // shipping_address_id
+        $billing_address_id,
+        $payment_method,
+        $payment_status,
+        $currency,
+        $order_uuid
     );
-    $item_stmt->execute();
+    $stmt->execute();
+    $order_id = $connection->insert_id;
+
+    // -------------------------------------------------------------------------
+    // 2️⃣ Insert ORDER ITEMS
+    // -------------------------------------------------------------------------
+    $item_sql = "INSERT INTO order_items (order_id, product_id, product_name, size_id, quantity, price, discount, tax, total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    $item_stmt = $connection->prepare($item_sql);
+
+    foreach ($items as $item) {
+        $item_stmt->bind_param(
+            "iisiidddd",
+            $order_id,
+            $item['product_id'],
+            $item['product_name'],
+            $item['size_id'],
+            $item['quantity'],
+            $item['unit_price'],
+            $item['discount'],
+            $item['tax'],
+            $item['line_total']
+        );
+        $item_stmt->execute();
+    }
+
+    // -------------------------------------------------------------------------
+    // 3️⃣ Insert PAYMENT
+    // -------------------------------------------------------------------------
+    $payment_uuid = uniqid('pay_');
+
+    $payment_sql = "
+        INSERT INTO payments (
+            order_id, payment_uuid, payment_method, payment_provider, 
+            amount, currency, payment_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ";
+    $pay_stmt = $connection->prepare($payment_sql);
+    $pay_stmt->bind_param(
+        "isssdss",
+        $order_id,
+        $payment_uuid,
+        $payment_method,
+        $payment_provider,
+        $total_amount,
+        $currency,
+        $payment_status
+    );
+    $pay_stmt->execute();
+    $payment_id = $connection->insert_id;
+
+    // -------------------------------------------------------------------------
+    // 4️⃣ Insert SHIPMENT placeholder
+    // -------------------------------------------------------------------------
+    $shipment_uuid = uniqid('ship_');
+    $tracking_number = 'TRK' . strtoupper(uniqid());
+    $tracking_url = "https://yourdomain.com/track.php?tn=" . urlencode($tracking_number); // demo URL
+    // For simplicity, using a fixed provider here - in real scenarios, integrate with actual shipment APIs
+    $shipment_provider = 'Shiprocket';
+
+    // Insert into shipments table
+    $shipment_sql = "
+        INSERT INTO shipments (
+            shipment_uuid, order_id, courier_name, tracking_number, tracking_url,
+            delivery_status, estimated_delivery, shipped_at
+        ) VALUES (?, ?, ?, ?, ?, 'pending', DATE_ADD(NOW(), INTERVAL 7 DAY), NULL)
+    ";
+    $ship_stmt = $connection->prepare($shipment_sql);
+    $ship_stmt->bind_param("sisss", $shipment_uuid, $order_id, $shipment_provider, $tracking_number, $tracking_url);
+    $ship_stmt->execute();
+    $shipment_id = $connection->insert_id;
+
+    // -------------------------------------------------------------------------
+    // 5️⃣ Insert ORDER EVENTS
+    // -------------------------------------------------------------------------
+    $event_sql = "INSERT INTO order_events (order_id, event_type, event_data, created_at) VALUES (?, ?, ?, NOW())";
+    $evt_stmt = $connection->prepare($event_sql);
+
+    $events = [ 
+        ['order_created', [ 
+            'user_id' => $user_id, 
+            'order_uuid' => $order_uuid, 
+            'total' => $total_amount 
+            ]
+        ], 
+        ['payment_initialized', [ 
+            'payment_uuid' => $payment_uuid, 
+            'status' => $payment_status 
+            ]
+        ], 
+        ['shipment_created', [ 
+            'shipment_id' => $shipment_id, 
+            'provider' => $shipment_provider 
+            ]
+        ] 
+    ]; 
+    
+    foreach ($events as [$type, $data]) { 
+        $json_data = json_encode($data); 
+        $evt_stmt->bind_param("iss", $order_id, $type, $json_data); 
+        $evt_stmt->execute(); 
+    }
+
+    // -------------------------------------------------------------------------
+    // 6️⃣ Update ORDER STATUS
+    // -------------------------------------------------------------------------
+    $order_status = ($payment_method == 'cash') ? 'pending' : 'processing';
+
+    $connection->query("
+        UPDATE orders
+        SET order_status='$order_status', payment_status='$payment_status'
+        WHERE order_id=$order_id
+    ");
+
+    // -------------------------------------------------------------------------
+    // ✅ Commit Transaction
+    // -------------------------------------------------------------------------
+    $connection->commit();
+
+    // -------------------------------------------------------------------------
+    // 🧹 Clear cart after order success
+    // -------------------------------------------------------------------------
+    unset($_SESSION['cart_items']);
+
+    // -------------------------------------------------------------------------
+    // 📨 Response
+    // -------------------------------------------------------------------------
+    echo json_encode([
+        'status' => 'success',
+        'message' => 'Order placed successfully!',
+        'order_id' => $order_id,
+        'order_uuid' => $order_uuid
+    ]);
+
+} catch (Exception $e) {
+     $connection->rollback();
+    echo "❌ SQL Error: " . $e->getMessage(); // keep this visible for now
+    exit;
 }
 
 // ------------------ Cart Cleanup ------------------ //
@@ -370,7 +557,7 @@ mail($user_email, $subject, $body, $headers);
 // ------------------ Activity Log ------------------ //
 logUserActivity($user_id, 'place_order', 'Placed order ID: ' . $order_id);
 
-// ------------------ Redirect ------------------ //
+// ------------------ Redirect based on Payment Method ------------------ //
 header("Location: ../views/order_success.php?order_id=$order_id");
 exit;
 ?>
