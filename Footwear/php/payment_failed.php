@@ -19,9 +19,9 @@ $stmt = $connection->prepare("
         order_number, order_uuid, user_id, address_id,
         subtotal_amount, tax_amount, shipping_amount, total_amount,
         payment_status, order_status, payment_method, currency,
-        placed_at, cancelled_at, created_at
+        placed_at, failed_at, created_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'failed', 'cancelled', ?, 'INR', NOW(), NOW(), NOW())
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'failed', 'failed', ?, 'INR', NOW(), NOW(), NOW())
 ");
 
 $tax = $data['tax'];
