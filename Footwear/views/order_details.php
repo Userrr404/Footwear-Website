@@ -239,7 +239,7 @@ require_once INCLUDES_PATH . 'db_connection.php';
             <a href="track_order.php?order_id=<?= $order['order_id'] ?>" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 shadow">
               <i class="fas fa-map-marker-alt"></i> Track Order
             </a>
-            <a href="invoice.php?order_id=<?= $order['order_id'] ?>" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-100">
+            <a href="order_invoice.php?order_id=<?= $order['order_id'] ?>" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-100">
               <i class="fas fa-file-invoice"></i> Invoice
             </a>
           </div>

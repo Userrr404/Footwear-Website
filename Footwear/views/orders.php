@@ -298,7 +298,7 @@ $orders = $stmt->get_result();
                  📍 Track
               </a>
 
-              <a href="invoice.php?order_id=<?= $order['order_id'] ?>" 
+              <a href="order_invoice.php?order_id=<?= $order['order_id'] ?>" 
                  class="px-4 py-2 rounded-full border border-gray-600 text-gray-600 text-sm hover:bg-gray-600 hover:text-white">
                  🧾 Invoice
               </a>
