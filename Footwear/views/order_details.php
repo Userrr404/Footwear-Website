@@ -64,6 +64,30 @@ require_once INCLUDES_PATH . 'db_connection.php';
       exit;
     }
 
+    // ---------- Fetch shipment activity (for timestamps) ----------
+    $shipmentTimes = [
+      'ordered' => null,
+      'payment_received' => null,
+      'in_transit' => null,
+      'shipped' => null,
+      'out_for_delivery' => null,
+      'delivered' => null
+    ];
+
+    $actSql = "SELECT status, created_at FROM shipment_activity WHERE order_id = ? ORDER BY created_at ASC";
+    $actStmt = $connection->prepare($actSql);
+    $actStmt->bind_param("i", $order_id);
+    $actStmt->execute();
+    $actRes = $actStmt->get_result();
+
+    while ($row = $actRes->fetch_assoc()) {
+      $statusKey = strtolower(str_replace(' ', '_', trim($row['status'])));
+      if (array_key_exists($statusKey, $shipmentTimes)) {
+        $shipmentTimes[$statusKey] = $row['created_at'];
+      }
+    }
+    $actStmt->close();
+
     // Fetch order items
     $itemsSql = "
       SELECT oi.*, p.product_name, s.size_value, pi.image_url
@@ -114,31 +138,39 @@ require_once INCLUDES_PATH . 'db_connection.php';
 
     // Determine order progress steps
     $steps = [
-      ['key' => 'ordered', 'label' => 'Ordered', 'time' => $order['placed_at'] ?? null],
-      ['key' => 'paid', 'label' => 'Payment Received', 'time' => $order['paid_at'] ?? null],
-      ['key' => 'processing', 'label' => 'Processing', 'time' => $order['paid_at'] ?? null], // keep same as paid if no separate
-      ['key' => 'shipped', 'label' => 'Shipped', 'time' => $order['shipment_shipped_at'] ?? null],
-      ['key' => 'delivered', 'label' => 'Delivered', 'time' => $order['delivered_at'] ?? null],
+      ['key' => 'ordered', 'label' => 'Ordered', 'time' => $order['placed_at']],
+      ['key' => 'paid', 'label' => $order['paid_at'] ? 'Payment Received' : 'Payment Pending', 'time' => $order['paid_at'] ?? null],
+      ['key' => 'processing', 'label' => 'Processing', 'time' => $shipmentTimes['in_transit']],
+      ['key' => 'shipped', 'label' => 'Shipped', 'time' => $shipmentTimes['shipped'] ?? $order['shipped_at']],
+      ['key' => 'out_for_delivery', 'label' => 'Out for Delivery', 'time' => $shipmentTimes['out_for_delivery']],
+      ['key' => 'delivered', 'label' => 'Delivered', 'time' => $shipmentTimes['delivered']],
     ];
 
     // Compute active index for styling. Priority: delivered > shipped > paid > placed (placed always present)
+    // ---------- Determine active index ----------
     $activeIndex = 0;
-    if (!empty($order['delivered_at'])) {
+    if (!empty($shipmentTimes['delivered'])) {
       foreach ($steps as $i => $s) if ($s['key'] === 'delivered') $activeIndex = $i;
-    } elseif (!empty($order['shipment_shipped_at'])) {
+    } elseif (!empty($shipmentTimes['out_for_delivery'])) {
+      foreach ($steps as $i => $s) if ($s['key'] === 'out_for_delivery') $activeIndex = $i;
+    } elseif (!empty($shipmentTimes['shipped'])) {
       foreach ($steps as $i => $s) if ($s['key'] === 'shipped') $activeIndex = $i;
+    } elseif (!empty($shipmentTimes['in_transit'])) {
+      foreach ($steps as $i => $s) if ($s['key'] === 'processing') $activeIndex = $i;
+    } elseif (!empty($shipmentTimes['ordered'])) {
+      foreach ($steps as $i => $s) if ($s['key'] === 'ordered') $activeIndex = $i;
     } elseif (!empty($order['paid_at'])) {
       foreach ($steps as $i => $s) if ($s['key'] === 'paid') $activeIndex = $i;
     } else {
       $activeIndex = 0;
     }
 
-    // Expected delivery estimate: prefer shipped_at + 3 days, otherwise placed_at + 5 days.
+    // Expected delivery estimate: prefer shipped_at + 3 days, otherwise placed_at + 7 days.
     $expectedDelivery = null;
     if (!empty($order['shipped_at'])) {
       $expectedDelivery = date('d M Y', strtotime('+3 days', strtotime($order['shipped_at'])));
     } elseif (!empty($order['placed_at'])) {
-      $expectedDelivery = date('d M Y', strtotime('+5 days', strtotime($order['placed_at'])));
+      $expectedDelivery = date('d M Y', strtotime('+7 days', strtotime($order['placed_at'])));
     }
 
     // Calculate totals (fallback to order totals if present)
@@ -168,18 +200,37 @@ require_once INCLUDES_PATH . 'db_connection.php';
             </h1>
             <p class="text-sm text-gray-500 mt-1">
               Placed on <?= htmlspecialchars(date('d M Y, h:i A', strtotime($order['placed_at']))) ?>
-              • Status: 
+              • Order: 
               <span class="ml-1 inline-block px-3 py-1 rounded-full text-xs font-medium
                 <?php
                   $s = $order['order_status'] ?? 'pending';
                   if ($s === 'delivered') echo 'bg-green-100 text-green-700';
                   elseif ($s === 'shipped') echo 'bg-indigo-100 text-indigo-700';
-                  elseif ($s === 'processing' || $s === 'paid') echo 'bg-blue-100 text-blue-700';
+                  elseif ($s === 'processing') echo 'bg-blue-100 text-blue-700';
+                  elseif ($s === 'out_for_delivery') echo 'bg-red-100 text-red-700';
+                  elseif ($s === 'returned') echo 'bg-red-100 text-red-700';
+                  elseif ($s === 'refunded') echo 'bg-red-100 text-red-700';
                   elseif ($s === 'cancelled') echo 'bg-red-100 text-red-700';
+                  elseif ($s === 'failed') echo 'bg-red-100 text-red-700';
                   else echo 'bg-yellow-100 text-yellow-700';
                 ?>
               ">
                 <?= ucfirst($order['order_status']) ?>
+              </span>
+
+              <!-- Payment status -->
+              • Payment:
+              <span class="ml-1 inline-block px-3 py-1 rounded-full text-xs font-medium
+                <?php
+                  $s = $order['payment_status'] ?? 'pending';
+                  if ($s === 'paid') echo 'bg-green-100 text-green-700';
+                  elseif ($s === 'refunded') echo 'bg-blue-100 text-blue-700';
+                  elseif ($s === 'partially_refunded') echo 'bg-red-100 text-red-700';
+                  elseif ($s === 'failed') echo 'bg-indigo-red text-red-700';
+                  else echo 'bg-yellow-100 text-yellow-700';
+                ?>
+              ">
+                <?= ucfirst($order['payment_status']) ?>
               </span>
             </p>
           </div>

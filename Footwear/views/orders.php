@@ -39,7 +39,7 @@ if (in_array($order_status_filter, ['pending','processing','shipped','delivered'
     $types .= "s";
 }
 
-if (in_array($payment_status_filter, ['paid','failed','refunded','pending'])) {
+if (in_array($payment_status_filter, ['paid','failed','refunded','pending','partially_refunded'])) {
     $sql .= " AND payment_status = ?";
     $params[] = $payment_status_filter;
     $types .= "s";
@@ -79,6 +79,7 @@ $orders = $stmt->get_result();
       <option value="pending" <?= $payment_status_filter=='pending'?'selected':'' ?>>Pending</option>
       <option value="failed" <?= $payment_status_filter=='failed'?'selected':'' ?>>Failed</option>
       <option value="refunded" <?= $payment_status_filter=='refunded'?'selected':'' ?>>Refunded</option>
+      <option value="partially_refunded" <?= $payment_status_filter=='partially_refunded'?'selected':'' ?>>Partially Refunded</option>
     </select>
 
     <div class="relative">
@@ -116,11 +117,14 @@ $orders = $stmt->get_result();
             <div class="flex gap-2 items-center">
               <span class="px-3 py-1 rounded-full text-xs font-semibold
                 <?php if ($order['order_status']=='pending') echo 'bg-yellow-100 text-yellow-700';
-                      elseif ($order['order_status']=='processing') echo 'bg-blue-100 text-blue-700';
-                      elseif ($order['order_status']=='shipped') echo 'bg-indigo-100 text-indigo-700';
-                      elseif ($order['order_status']=='delivered') echo 'bg-green-100 text-green-700';
-                      elseif ($order['order_status']=='cancelled') echo 'bg-red-100 text-red-700';
-                      elseif ($order['order_status']=='failed') echo 'bg-red-200 text-red-800'; ?>">
+                      elseif ($order['order_status'] == 'shipped') echo 'bg-indigo-100 text-indigo-700';
+                  elseif ($order['order_status'] == 'processing') echo 'bg-blue-100 text-blue-700';
+                  elseif ($order['order_status']== 'out_for_delivery') echo 'bg-red-100 text-red-700';
+                  elseif ($order['order_status'] == 'returned') echo 'bg-red-100 text-red-700';
+                  elseif ($order['order_status'] == 'refunded') echo 'bg-red-100 text-red-700';
+                  elseif ($order['order_status'] == 'cancelled') echo 'bg-red-100 text-red-700';
+                  elseif ($order['order_status'] == 'failed') echo 'bg-red-100 text-red-700';
+                ?>">
                 <?= ucfirst($order['order_status']) ?>
               </span>
 
@@ -128,7 +132,8 @@ $orders = $stmt->get_result();
                 <?php if ($order['payment_status']=='paid') echo 'bg-green-100 text-green-700';
                       elseif ($order['payment_status']=='pending') echo 'bg-yellow-100 text-yellow-700';
                       elseif ($order['payment_status']=='failed') echo 'bg-red-100 text-red-700';
-                      elseif ($order['payment_status']=='refunded') echo 'bg-gray-200 text-gray-700'; ?>">
+                      elseif ($order['payment_status']=='refunded') echo 'bg-gray-200 text-gray-700';
+                      elseif ($order['payment_status'] == 'partially_refunded') echo 'bg-red-100 text-red-700'; ?>">
                 <?= ucfirst($order['payment_status']) ?>
               </span>
             </div>
@@ -199,25 +204,84 @@ $orders = $stmt->get_result();
 
           <!-- Progress bar (skip if failed) -->
           <?php if ($order['order_status'] != 'failed'): ?>
-            <div class="flex justify-between items-start mt-6 relative">
-              <?php
-                $steps = ['Pending','Processing','Shipped','Delivered'];
-                $statuses = ['pending','processing','shipped','delivered'];
-                $currentIndex = array_search($order['order_status'], $statuses);
-                foreach ($steps as $i => $label):
-                  $done = $currentIndex >= $i;
-              ?>
-                <div class="flex-1 flex flex-col items-center relative">
-                  <div class="w-8 h-8 flex items-center justify-center rounded-full text-xs font-bold z-10
-                    <?= $done ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-600' ?>">
-                    <?= $i+1 ?>
+            <?php
+
+              // ---------- Fetch shipment activity (for timestamps) ----------
+              $shipmentTimes = [
+                'ordered' => null,
+                'payment_received' => null,
+                'in_transit' => null,
+                'shipped' => null,
+                'out_for_delivery' => null,
+                'delivered' => null
+              ];
+
+              $actSql = "SELECT status, created_at FROM shipment_activity WHERE order_id = ? ORDER BY created_at ASC";
+              $actStmt = $connection->prepare($actSql);
+              $actStmt->bind_param("i", $order['order_id']);
+              $actStmt->execute();
+              $actRes = $actStmt->get_result();
+
+              while ($row = $actRes->fetch_assoc()) {
+                $statusKey = strtolower(str_replace(' ', '_', trim($row['status'])));
+                if (array_key_exists($statusKey, $shipmentTimes)) {
+                  $shipmentTimes[$statusKey] = $row['created_at'];
+                }
+              }
+              $actStmt->close();
+              // Build timeline steps similar to track_order.php
+              $steps = [
+                ['key' => 'ordered', 'label' => 'Ordered', 'time' => $order['placed_at']],
+                ['key' => 'paid', 'label' => $order['paid_at'] ? 'Payment Received' : 'Payment Pending', 'time' => $order['paid_at'] ?? null],
+                ['key' => 'processing', 'label' => 'Processing', 'time' => $shipmentTimes['in_transit']],
+                ['key' => 'shipped', 'label' => 'Shipped', 'time' => $shipmentTimes['shipped'] ?? $order['shipped_at']],
+                ['key' => 'out_for_delivery', 'label' => 'Out for Delivery', 'time' => $shipmentTimes['out_for_delivery']],
+                ['key' => 'delivered', 'label' => 'Delivered', 'time' => $shipmentTimes['delivered']],
+              ];
+
+              // Determine active index
+              $statusOrder = ['pending','processing','shipped','out_for_delivery','delivered'];
+              // ---------- Determine active index ----------
+              $activeIndex = 0;
+              if (!empty($shipmentTimes['delivered'])) {
+                foreach ($steps as $i => $s) if ($s['key'] === 'delivered') $activeIndex = $i;
+              } elseif (!empty($shipmentTimes['out_for_delivery'])) {
+                foreach ($steps as $i => $s) if ($s['key'] === 'out_for_delivery') $activeIndex = $i;
+              } elseif (!empty($shipmentTimes['shipped'])) {
+                foreach ($steps as $i => $s) if ($s['key'] === 'shipped') $activeIndex = $i;
+              } elseif (!empty($shipmentTimes['in_transit'])) {
+                foreach ($steps as $i => $s) if ($s['key'] === 'processing') $activeIndex = $i;
+              } elseif (!empty($order['paid_at'])) {
+                foreach ($steps as $i => $s) if ($s['key'] === 'paid') $activeIndex = $i;
+              } else {
+                $activeIndex = 0;
+              }
+            ?>
+
+            <div class="mt-6">
+              <div class="flex justify-between relative">
+                <?php
+                  foreach ($steps as $idx => $step):
+                    $done = $activeIndex >= $idx;
+                    $timeLabel = $step['time'] ? date('d M, h:i A', strtotime($step['time'])) : '';
+                ?>
+                  <div class="flex-1 flex flex-col items-center text-center relative">
+                    <div class="w-8 h-8 flex items-center justify-center rounded-full text-xs font-bold z-10
+                      <?= $done ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-600' ?>">
+                      <?= $idx+1 ?>
+                    </div>
+                    <div class="mt-1 text-[10px] <?= $done ? 'text-blue-600 font-medium' : 'text-gray-600' ?> ">
+                      <?= htmlspecialchars($step['label']) ?>
+                    </div>  
+                    <?php if($timeLabel): ?>
+                      <div class="mt-1 text-[10px] text-gray-400"><?= $timeLabel ?></div> 
+                    <?php endif; ?>  
+                    <?php if ($idx < count($steps)-1): ?>
+                      <div class="absolute top-4 left-1/2 w-full h-1 <?= $done ? 'bg-blue-600' : 'bg-gray-300' ?>"></div>
+                    <?php endif; ?>
                   </div>
-                  <?php if ($i < count($steps)-1): ?>
-                    <div class="absolute top-4 left-1/2 w-full h-1 <?= $done ? 'bg-blue-600' : 'bg-gray-300' ?>"></div>
-                  <?php endif; ?>
-                  <span class="mt-2 text-xs text-gray-600"><?= $label ?></span>
-                </div>
-              <?php endforeach; ?>
+                <?php endforeach; ?>
+              </div>
             </div>
           <?php endif; ?>
 
