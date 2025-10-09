@@ -79,7 +79,18 @@ function e($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
         </div>
         <div class="text-right">
           <div class="inline-flex items-center gap-2">
-            <span class="px-3 py-1 rounded-full bg-green-100 text-green-800 text-sm font-semibold"><?= e(ucfirst($order['payment_status'] ?? 'pending')) ?></span>
+             <span class="px-3 py-1 rounded-full text-sm font-semibold
+                <?php
+                  $s = $order['payment_status'] ?? 'pending';
+                  if ($s === 'paid') echo 'bg-green-100 text-green-700';
+                  elseif ($s === 'refunded') echo 'bg-blue-100 text-blue-700';
+                  elseif ($s === 'partially_refunded') echo 'bg-red-100 text-red-700';
+                  elseif ($s === 'failed') echo 'bg-indigo-red text-red-700';
+                  else echo 'bg-yellow-100 text-yellow-700';
+                ?>
+              ">
+                <?= ucfirst($order['payment_status']) ?>
+              </span>
           </div>
         </div>
       </div>

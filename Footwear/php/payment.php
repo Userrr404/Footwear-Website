@@ -7,7 +7,7 @@ $orderId = $_GET['order_id'] ?? null;
 if (!$orderId) die('Invalid request');
 
 $total = $_SESSION['razorpay_amount'] ?? 0;
-$keyId = "rzp_test_RJKlS0sGzGVCrp";
+$keyId = RAZORPAY_KEY_ID;
 ?>
 
 <!DOCTYPE html>

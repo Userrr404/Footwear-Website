@@ -230,36 +230,6 @@ $addr_stmt->execute();
 $addresses = $addr_stmt->get_result();
 ?>
 
-<?php
-// ✅ Debug block - only runs if you pass ?debug=1 in URL
-if (isset($_GET['debug']) && $_GET['debug'] == 1) {
-    echo "<pre>";
-    echo "SESSION USER:\n";
-    print_r($_SESSION);
-
-    echo "\nCART ITEMS (raw from DB):\n";
-    $cart_result->data_seek(0); // reset pointer in case loop already ran
-    while ($row = $cart_result->fetch_assoc()) {
-        print_r($row);
-    }
-
-    echo "\nCART ITEMS (after processing):\n";
-    print_r($cart_items);
-
-    echo "\nTOTALS:\n";
-    echo "Subtotal: $subtotal\n";
-    echo "Discount total: $discount_total\n";
-    echo "Tax total: $tax_total\n";
-    echo "Shipping: $shipping\n";
-    echo "Order Discount: $order_discount\n";
-    echo "Grand Total: $grand_total\n";
-
-    echo "</pre>";
-    // exit; // uncomment if you want to stop page rendering after debug
-}
-?>
-
-
 <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-10">
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
 

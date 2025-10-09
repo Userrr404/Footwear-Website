@@ -24,8 +24,8 @@ $razorpay_signature  = $input['razorpay_signature'];
 // -------------------------
 // 2. Razorpay credentials
 // -------------------------
-$keyId = "rzp_test_RJKlS0sGzGVCrp";
-$keySecret = "eMNQRnWTgVJ8OOoCqhX6h7vN";
+$keyId = RAZORPAY_KEY_ID;
+$keySecret = RAZORPAY_KEY_SECRET;
 $api = new Api($keyId, $keySecret);
 
 // -------------------------
@@ -60,16 +60,17 @@ try {
     $order_uuid = uniqid('ORD_');
     $order_number = 'ORD' . strtoupper(uniqid());
     $currency = 'INR';
+    $order_status = 'pending';
 
     $stmt = $connection->prepare("
         INSERT INTO orders (
             order_number, address_id, user_id, subtotal_amount, discount_amount,
             tax_amount, shipping_amount, total_amount, shipping_address_id, billing_address_id,
-            payment_method, payment_status, currency, order_uuid, paid_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+            order_status, payment_method, payment_status, currency, order_uuid, paid_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
     ");
     $stmt->bind_param(
-        "siiddddiisssss",
+        "siiddddiissssss",
         $order_number,
         $data['address_id'],
         $user_id,
@@ -80,6 +81,7 @@ try {
         $data['total'],
         $data['address_id'],
         $data['address_id'],
+        $order_status,
         $data['payment_method'],
         $payment_status,
         $currency,

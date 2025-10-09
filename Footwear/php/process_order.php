@@ -319,8 +319,8 @@ $final_discount = $discount_total + $order_discount; // final discount (product 
 // $payment_method = strtolower($_POST['payment_method'] ?? '');
 if($payment_method === 'UPI'){
 
-    $keyId = "rzp_test_RJKlS0sGzGVCrp";
-    $keySecret = "eMNQRnWTgVJ8OOoCqhX6h7vN";
+    $keyId = RAZORPAY_KEY_ID;
+    $keySecret = RAZORPAY_KEY_SECRET;
 
     $api = new Api($keyId, $keySecret);
 
